@@ -1,0 +1,173 @@
+# AI CyberX - Production Docker Compose
+# Usage: DOMAIN=yourdomain.com docker compose -f docker-compose.prod.yml up -d
+
+services:
+  # Nginx Reverse Proxy with SSL
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: cyberx-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    networks:
+      - cyberx-network
+
+  # Certbot for Let's Encrypt SSL
+  certbot:
+    image: certbot/certbot:latest
+    container_name: cyberx-certbot
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+      - certbot_logs:/var/log/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - cyberx-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: cyberx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cyberx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-cyberx}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cyberx} -d ${POSTGRES_DB:-cyberx}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cyberx-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: cyberx-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cyberx-network
+
+  # Backend API
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: ../infrastructure/docker/Dockerfile.backend
+    container_name: cyberx-backend
+    restart: unless-stopped
+    environment:
+      # Database
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-cyberx}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cyberx}
+      - REDIS_URL=redis://redis:6379/0
+      # Security
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - FORCE_HTTPS=true
+      # AI Keys
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DEFAULT_AI_MODEL=${DEFAULT_AI_MODEL:-mistral-large-latest}
+      # External Services
+      - UNSPLASH_ACCESS_KEY=${UNSPLASH_ACCESS_KEY:-}
+      - PEXELS_API_KEY=${PEXELS_API_KEY:-}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY:-}
+      # Course Generation
+      - MAX_LESSON_LENGTH=${MAX_LESSON_LENGTH:-3000}
+      - MIN_LESSON_LENGTH=${MIN_LESSON_LENGTH:-1500}
+      - GENERATION_TIMEOUT=${GENERATION_TIMEOUT:-300}
+      # Domain Configuration
+      - SERVER_HOST=${DOMAIN:?DOMAIN is required}
+      - CORS_ORIGINS=["https://${DOMAIN}","https://www.${DOMAIN}"]
+      # Docker for labs
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DEBUG=false
+    volumes:
+      - app_data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - cyberx-network
+    security_opt:
+      - no-new-privileges:true
+
+  # Frontend
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: ../infrastructure/docker/Dockerfile.frontend
+      args:
+        - NEXT_PUBLIC_API_URL=https://${DOMAIN:?DOMAIN is required}
+    container_name: cyberx-frontend
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=https://${DOMAIN}
+      - NODE_ENV=production
+    expose:
+      - "3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - cyberx-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  app_data:
+    driver: local
+  certbot_logs:
+    driver: local
+  nginx_logs:
+    driver: local
+
+networks:
+  cyberx-network:
+    driver: bridge

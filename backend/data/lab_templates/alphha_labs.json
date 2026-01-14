@@ -1,0 +1,423 @@
+{
+  "labs": [
+    {
+      "id": "alphha-basic-linux",
+      "title": "Linux Fundamentals with Alphha Linux",
+      "description": "Learn essential Linux commands and navigation in a lightweight environment",
+      "category": "system_security",
+      "difficulty": "beginner",
+      "duration_minutes": 60,
+      "preset": "minimal",
+      "infrastructure_spec": {
+        "type": "alphha-linux",
+        "preset": "minimal",
+        "containers": [
+          {
+            "name": "target",
+            "image": "alphha-linux:minimal",
+            "ports": ["2222:22"],
+            "resources": {
+              "memory": "256m",
+              "cpu": 0.5
+            }
+          }
+        ]
+      },
+      "objectives": [
+        "Navigate the Linux filesystem",
+        "Use basic commands (ls, cd, cat, grep)",
+        "Manage files and directories",
+        "Understand file permissions"
+      ],
+      "flags": [
+        {
+          "id": "flag1",
+          "description": "Find the hidden file in /home/alphha",
+          "value": "FLAG{linux_basics_hidden_file}",
+          "points": 10
+        },
+        {
+          "id": "flag2",
+          "description": "Read the contents of /etc/passwd",
+          "value": "FLAG{passwd_file_explored}",
+          "points": 10
+        }
+      ]
+    },
+    {
+      "id": "alphha-network-recon",
+      "title": "Network Reconnaissance",
+      "description": "Learn network scanning and reconnaissance techniques",
+      "category": "network_security",
+      "difficulty": "beginner",
+      "duration_minutes": 90,
+      "preset": "server",
+      "infrastructure_spec": {
+        "type": "alphha-linux",
+        "preset": "server",
+        "containers": [
+          {
+            "name": "attacker",
+            "image": "alphha-linux:server",
+            "ports": ["2222:22"],
+            "resources": {
+              "memory": "512m",
+              "cpu": 1
+            }
+          },
+          {
+            "name": "target1",
+            "image": "alphha-linux:minimal",
+            "ports": [],
+            "resources": {
+              "memory": "128m",
+              "cpu": 0.25
+            }
+          },
+          {
+            "name": "target2",
+            "image": "nginx:alpine",
+            "ports": [],
+            "resources": {
+              "memory": "64m",
+              "cpu": 0.25
+            }
+          }
+        ]
+      },
+      "objectives": [
+        "Perform host discovery with nmap",
+        "Identify open ports and services",
+        "Analyze service versions",
+        "Document reconnaissance findings"
+      ],
+      "flags": [
+        {
+          "id": "flag1",
+          "description": "Identify all live hosts on the network",
+          "value": "FLAG{hosts_discovered}",
+          "points": 15
+        },
+        {
+          "id": "flag2",
+          "description": "Find the web server port",
+          "value": "FLAG{port_80_nginx}",
+          "points": 15
+        }
+      ]
+    },
+    {
+      "id": "alphha-web-security",
+      "title": "Web Application Security Basics",
+      "description": "Explore common web vulnerabilities and testing techniques",
+      "category": "web_security",
+      "difficulty": "intermediate",
+      "duration_minutes": 120,
+      "preset": "pentest",
+      "infrastructure_spec": {
+        "type": "alphha-linux",
+        "preset": "pentest",
+        "containers": [
+          {
+            "name": "attacker",
+            "image": "alphha-linux:pentest",
+            "ports": ["2222:22"],
+            "resources": {
+              "memory": "1024m",
+              "cpu": 2
+            }
+          },
+          {
+            "name": "vulnerable-web",
+            "image": "vulnerables/web-dvwa",
+            "ports": ["8080:80"],
+            "environment": {
+              "RECAPTCHA_PRIV_KEY": "",
+              "RECAPTCHA_PUB_KEY": ""
+            },
+            "resources": {
+              "memory": "256m",
+              "cpu": 0.5
+            }
+          }
+        ]
+      },
+      "objectives": [
+        "Perform web application reconnaissance",
+        "Identify common vulnerabilities",
+        "Test for SQL injection",
+        "Explore XSS vulnerabilities"
+      ],
+      "flags": [
+        {
+          "id": "flag1",
+          "description": "Access the DVWA admin panel",
+          "value": "FLAG{dvwa_accessed}",
+          "points": 20
+        },
+        {
+          "id": "flag2",
+          "description": "Extract database information via SQLi",
+          "value": "FLAG{sqli_successful}",
+          "points": 30
+        }
+      ]
+    },
+    {
+      "id": "alphha-python-security",
+      "title": "Python for Security Scripting",
+      "description": "Learn to write security tools and automation scripts in Python",
+      "category": "development",
+      "difficulty": "intermediate",
+      "duration_minutes": 90,
+      "preset": "developer",
+      "infrastructure_spec": {
+        "type": "alphha-linux",
+        "preset": "developer",
+        "containers": [
+          {
+            "name": "dev",
+            "image": "alphha-linux:developer",
+            "ports": ["2222:22", "8000:8000"],
+            "resources": {
+              "memory": "512m",
+              "cpu": 1
+            }
+          }
+        ]
+      },
+      "objectives": [
+        "Write a port scanner in Python",
+        "Create a password cracker script",
+        "Develop a simple network sniffer",
+        "Use pwntools for exploit development"
+      ],
+      "flags": [
+        {
+          "id": "flag1",
+          "description": "Create a working port scanner",
+          "value": "FLAG{python_scanner_works}",
+          "points": 25
+        },
+        {
+          "id": "flag2",
+          "description": "Crack the MD5 hash: 5f4dcc3b5aa765d61d8327deb882cf99",
+          "value": "FLAG{password_cracked}",
+          "points": 25
+        }
+      ]
+    },
+    {
+      "id": "alphha-password-attacks",
+      "title": "Password Attacks and Cracking",
+      "description": "Learn various password attack techniques and defenses",
+      "category": "cryptography",
+      "difficulty": "intermediate",
+      "duration_minutes": 120,
+      "preset": "pentest",
+      "infrastructure_spec": {
+        "type": "alphha-linux",
+        "preset": "pentest",
+        "containers": [
+          {
+            "name": "attacker",
+            "image": "alphha-linux:pentest",
+            "ports": ["2222:22"],
+            "resources": {
+              "memory": "1024m",
+              "cpu": 2
+            }
+          },
+          {
+            "name": "ssh-target",
+            "image": "alphha-linux:minimal",
+            "ports": [],
+            "resources": {
+              "memory": "128m",
+              "cpu": 0.25
+            }
+          }
+        ]
+      },
+      "objectives": [
+        "Use Hydra for brute force attacks",
+        "Crack password hashes with John the Ripper",
+        "Create custom wordlists with Crunch",
+        "Understand password security best practices"
+      ],
+      "flags": [
+        {
+          "id": "flag1",
+          "description": "Brute force the SSH password",
+          "value": "FLAG{ssh_cracked}",
+          "points": 30
+        },
+        {
+          "id": "flag2",
+          "description": "Crack the shadow file hashes",
+          "value": "FLAG{hashes_cracked}",
+          "points": 30
+        }
+      ]
+    },
+    {
+      "id": "alphha-forensics-intro",
+      "title": "Digital Forensics Introduction",
+      "description": "Learn basic digital forensics techniques and tools",
+      "category": "digital_forensics",
+      "difficulty": "intermediate",
+      "duration_minutes": 90,
+      "preset": "pentest",
+      "infrastructure_spec": {
+        "type": "alphha-linux",
+        "preset": "pentest",
+        "containers": [
+          {
+            "name": "forensics",
+            "image": "alphha-linux:pentest",
+            "ports": ["2222:22"],
+            "resources": {
+              "memory": "1024m",
+              "cpu": 1
+            }
+          }
+        ]
+      },
+      "objectives": [
+        "Analyze file metadata with exiftool",
+        "Extract hidden data with binwalk",
+        "Recover deleted files with foremost",
+        "Investigate steganography with steghide"
+      ],
+      "flags": [
+        {
+          "id": "flag1",
+          "description": "Extract hidden data from the image",
+          "value": "FLAG{stego_extracted}",
+          "points": 25
+        },
+        {
+          "id": "flag2",
+          "description": "Recover the deleted document",
+          "value": "FLAG{file_recovered}",
+          "points": 25
+        }
+      ]
+    },
+    {
+      "id": "alphha-ctf-challenge",
+      "title": "Capture The Flag Challenge",
+      "description": "Multi-category CTF challenge to test your skills",
+      "category": "ctf",
+      "difficulty": "advanced",
+      "duration_minutes": 180,
+      "preset": "pentest",
+      "infrastructure_spec": {
+        "type": "alphha-linux",
+        "preset": "pentest",
+        "containers": [
+          {
+            "name": "attacker",
+            "image": "alphha-linux:pentest",
+            "ports": ["2222:22"],
+            "resources": {
+              "memory": "2048m",
+              "cpu": 2
+            }
+          },
+          {
+            "name": "web-challenge",
+            "image": "nginx:alpine",
+            "ports": ["8080:80"],
+            "resources": {
+              "memory": "128m",
+              "cpu": 0.25
+            }
+          },
+          {
+            "name": "crypto-challenge",
+            "image": "alphha-linux:minimal",
+            "ports": [],
+            "resources": {
+              "memory": "128m",
+              "cpu": 0.25
+            }
+          },
+          {
+            "name": "pwn-challenge",
+            "image": "alphha-linux:developer",
+            "ports": ["9999:9999"],
+            "resources": {
+              "memory": "256m",
+              "cpu": 0.5
+            }
+          }
+        ]
+      },
+      "objectives": [
+        "Solve web exploitation challenges",
+        "Break cryptographic puzzles",
+        "Exploit binary vulnerabilities",
+        "Capture all flags"
+      ],
+      "flags": [
+        {
+          "id": "web1",
+          "description": "Web Challenge Flag",
+          "value": "FLAG{web_master}",
+          "points": 50
+        },
+        {
+          "id": "crypto1",
+          "description": "Crypto Challenge Flag",
+          "value": "FLAG{crypto_king}",
+          "points": 50
+        },
+        {
+          "id": "pwn1",
+          "description": "Binary Exploitation Flag",
+          "value": "FLAG{pwn_champion}",
+          "points": 100
+        }
+      ]
+    }
+  ],
+  "presets": {
+    "minimal": {
+      "image": "alphha-linux:minimal",
+      "description": "Lightweight CLI environment",
+      "default_memory": "256m",
+      "default_cpu": 0.5,
+      "ssh_enabled": true
+    },
+    "server": {
+      "image": "alphha-linux:server",
+      "description": "Server administration tools",
+      "default_memory": "512m",
+      "default_cpu": 1,
+      "ssh_enabled": true,
+      "tools": ["nmap", "tcpdump", "iptables", "git", "tmux"]
+    },
+    "developer": {
+      "image": "alphha-linux:developer",
+      "description": "Development environment",
+      "default_memory": "512m",
+      "default_cpu": 1,
+      "ssh_enabled": true,
+      "tools": ["python3", "gcc", "gdb", "pwntools"]
+    },
+    "pentest": {
+      "image": "alphha-linux:pentest",
+      "description": "Penetration testing tools",
+      "default_memory": "1024m",
+      "default_cpu": 2,
+      "ssh_enabled": true,
+      "tools": ["nmap", "metasploit", "hydra", "john", "sqlmap", "nikto", "burp"]
+    }
+  },
+  "default_credentials": {
+    "username": "alphha",
+    "password": "alphha",
+    "root_password": "alphha"
+  }
+}

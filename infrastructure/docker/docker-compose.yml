@@ -1,0 +1,114 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: cyberx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-cyberx}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cyberx -d cyberx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cyberx-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: cyberx-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cyberx-network
+
+  # Backend API
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: ../infrastructure/docker/Dockerfile.backend
+    container_name: cyberx-backend
+    restart: unless-stopped
+    group_add:
+      - "0"  # Docker socket group ID (root for macOS Docker Desktop)
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cyberx}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DEFAULT_AI_MODEL=mistral-large-latest
+      # External Service API Keys (optional - for enhanced content)
+      - UNSPLASH_ACCESS_KEY=${UNSPLASH_ACCESS_KEY:-}
+      - PEXELS_API_KEY=${PEXELS_API_KEY:-}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY:-}
+      # Course Generation Settings
+      - MAX_LESSON_LENGTH=3000
+      - MIN_LESSON_LENGTH=1500
+      - GENERATION_TIMEOUT=300
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DEBUG=false
+      - SERVER_HOST=${SERVER_HOST:-cyyberaix.in}
+      - CORS_ORIGINS=["https://cyyberaix.in","https://www.cyyberaix.in","http://cyyberaix.in","http://localhost:3000"]
+    volumes:
+      - ../../data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "0.0.0.0:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - cyberx-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: ../infrastructure/docker/Dockerfile.frontend
+      args:
+        - NEXT_PUBLIC_API_URL=https://cyyberaix.in
+    container_name: cyberx-frontend
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=https://cyyberaix.in
+    ports:
+      - "0.0.0.0:3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - cyberx-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  cyberx-network:
+    driver: bridge

@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 10, 15, 28;
+  --background-end-rgb: 5, 8, 16;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--background-start-rgb)),
+    rgb(var(--background-end-rgb))
+  );
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 157, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 255, 157, 0.5);
+}
+
+/* Terminal styling */
+.terminal {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  background: #0a0f1c;
+  border: 1px solid rgba(0, 255, 157, 0.2);
+  border-radius: 8px;
+}
+
+/* Code blocks */
+pre {
+  background: rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid rgba(0, 255, 157, 0.1);
+  border-radius: 8px;
+}
+
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Cyber glow effects */
+.cyber-glow {
+  box-shadow: 0 0 10px rgba(0, 255, 157, 0.3),
+              0 0 20px rgba(0, 255, 157, 0.2),
+              0 0 30px rgba(0, 255, 157, 0.1);
+}
+
+.cyber-border {
+  border: 1px solid rgba(0, 255, 157, 0.3);
+}
+
+/* Animation for streaming text */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink::after {
+  content: '|';
+  animation: blink 1s infinite;
+  color: #00ff9d;
+}
+
+/* Loading spinner */
+.loading-spinner {
+  border: 3px solid rgba(0, 255, 157, 0.1);
+  border-top-color: #00ff9d;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* AI Response Content Styles */
+.ai-response-content {
+  line-height: 1.7;
+}
+
+.ai-response-content > *:first-child {
+  margin-top: 0;
+}
+
+.ai-response-content > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Better table cell wrapping for long content */
+.ai-response-content td {
+  white-space: normal;
+  word-wrap: break-word;
+}
+
+/* Nested list styles */
+.ai-response-content ul ul,
+.ai-response-content ol ol,
+.ai-response-content ul ol,
+.ai-response-content ol ul {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Task list styling */
+.ai-response-content input[type="checkbox"] {
+  margin-right: 0.5rem;
+  accent-color: #00ff9d;
+}
+
+/* Inline code in headings */
+.ai-response-content h1 code,
+.ai-response-content h2 code,
+.ai-response-content h3 code {
+  font-size: 0.9em;
+}
+
+/* Image styling */
+.ai-response-content img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 1rem 0;
+}
+
+/* Definition lists */
+.ai-response-content dl {
+  margin: 1rem 0;
+}
+
+.ai-response-content dt {
+  font-weight: 600;
+  color: #00ff9d;
+  margin-top: 0.5rem;
+}
+
+.ai-response-content dd {
+  margin-left: 1.5rem;
+  color: #e5e7eb;
+}
