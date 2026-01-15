@@ -15,7 +15,7 @@ import {
   X
 } from 'lucide-react';
 import PortalLayout from '@/components/common/PortalLayout';
-import { api } from '@/services/api';
+import { batchesApi } from '@/services/api';
 
 interface Batch {
   id: string;
@@ -46,9 +46,11 @@ export default function PortalBatches() {
   }, [orgId]);
 
   const fetchBatches = async () => {
+    if (typeof orgId !== 'string') return;
+
     try {
-      const res = await api.get(`/organizations/${orgId}/batches`);
-      setBatches(res.data);
+      const res = await batchesApi.list(orgId);
+      setBatches(res.batches || res || []);
     } catch (error) {
       setBatches([]);
     } finally {
@@ -58,8 +60,15 @@ export default function PortalBatches() {
 
   const handleCreateBatch = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (typeof orgId !== 'string') return;
+
     try {
-      await api.post(`/organizations/${orgId}/batches`, newBatch);
+      await batchesApi.create(orgId, {
+        name: newBatch.name,
+        description: newBatch.description,
+        start_date: newBatch.start_date,
+        end_date: newBatch.end_date
+      });
       setShowCreateModal(false);
       setNewBatch({ name: '', description: '', start_date: '', end_date: '' });
       fetchBatches();

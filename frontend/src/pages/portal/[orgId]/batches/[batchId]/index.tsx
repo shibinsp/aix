@@ -15,7 +15,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import PortalLayout from '@/components/common/PortalLayout';
-import { api } from '@/services/api';
+import { batchesApi } from '@/services/api';
 
 interface BatchDetails {
   id: string;
@@ -43,14 +43,27 @@ export default function BatchDashboard() {
   }, [orgId, batchId]);
 
   const fetchBatchDetails = async () => {
+    if (typeof batchId !== 'string') return;
+
     try {
-      const res = await api.get(`/organizations/${orgId}/batches/${batchId}`);
-      setBatch(res.data);
+      const data = await batchesApi.get(batchId);
+      setBatch({
+        id: data.id,
+        name: data.name,
+        description: data.description || '',
+        status: data.status || 'active',
+        start_date: data.start_date || new Date().toISOString(),
+        end_date: data.end_date || new Date().toISOString(),
+        member_count: data.member_count || 0,
+        course_count: data.course_count || data.curriculum?.length || 0,
+        avg_progress: data.avg_progress || 0,
+        completions: data.completions || 0
+      });
     } catch (error) {
       // Fallback data
       setBatch({
-        id: batchId as string,
-        name: 'Loading...',
+        id: batchId,
+        name: 'Batch Not Found',
         description: '',
         status: 'active',
         start_date: new Date().toISOString(),

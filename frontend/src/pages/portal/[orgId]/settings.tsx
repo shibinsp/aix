@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import PortalLayout from '@/components/common/PortalLayout';
 import { useAuthStore } from '@/store/authStore';
-import { api } from '@/services/api';
+import { organizationsApi } from '@/services/api';
 
 interface OrgSettings {
   name: string;
@@ -65,9 +65,18 @@ export default function PortalSettings() {
   }, [orgId]);
 
   const fetchSettings = async () => {
+    if (typeof orgId !== 'string') return;
+
     try {
-      const res = await api.get(`/organizations/${orgId}/settings`);
-      setSettings(res.data);
+      const orgData = await organizationsApi.get(orgId);
+      setSettings({
+        name: orgData.name || '',
+        description: orgData.description || '',
+        website: orgData.website || '',
+        contact_email: orgData.contact_email || '',
+        notifications: settings.notifications,
+        defaults: settings.defaults
+      });
     } catch (error) {
       // Keep defaults
     } finally {
@@ -76,10 +85,16 @@ export default function PortalSettings() {
   };
 
   const handleSave = async () => {
+    if (typeof orgId !== 'string') return;
+
     setSaving(true);
     setMessage(null);
     try {
-      await api.put(`/organizations/${orgId}/settings`, settings);
+      await organizationsApi.update(orgId, {
+        name: settings.name,
+        description: settings.description,
+        contact_email: settings.contact_email
+      });
       setMessage({ type: 'success', text: 'Settings saved successfully!' });
     } catch (error) {
       setMessage({ type: 'error', text: 'Failed to save settings. Please try again.' });

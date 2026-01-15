@@ -14,7 +14,7 @@ import {
   Plus
 } from 'lucide-react';
 import PortalLayout from '@/components/common/PortalLayout';
-import { api } from '@/services/api';
+import { invitationsApi } from '@/services/api';
 
 interface Invitation {
   id: string;
@@ -45,9 +45,11 @@ export default function PortalInvitations() {
   }, [orgId]);
 
   const fetchInvitations = async () => {
+    if (typeof orgId !== 'string') return;
+
     try {
-      const res = await api.get(`/organizations/${orgId}/invitations`);
-      setInvitations(res.data);
+      const res = await invitationsApi.list(orgId);
+      setInvitations(res.invitations || res || []);
     } catch (error) {
       setInvitations([]);
     } finally {
@@ -57,9 +59,15 @@ export default function PortalInvitations() {
 
   const handleSendInvitation = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (typeof orgId !== 'string') return;
+
     setSending(true);
     try {
-      await api.post(`/organizations/${orgId}/invitations`, inviteForm);
+      await invitationsApi.create(orgId, {
+        email: inviteForm.email,
+        role: inviteForm.role,
+        message: inviteForm.message
+      });
       setShowInviteModal(false);
       setInviteForm({ email: '', role: 'member', message: '' });
       fetchInvitations();
@@ -72,7 +80,7 @@ export default function PortalInvitations() {
 
   const handleResend = async (invitationId: string) => {
     try {
-      await api.post(`/organizations/${orgId}/invitations/${invitationId}/resend`);
+      await invitationsApi.resend(invitationId);
       fetchInvitations();
     } catch (error) {
       console.error('Failed to resend invitation:', error);
@@ -81,7 +89,7 @@ export default function PortalInvitations() {
 
   const handleCancel = async (invitationId: string) => {
     try {
-      await api.delete(`/organizations/${orgId}/invitations/${invitationId}`);
+      await invitationsApi.cancel(invitationId);
       fetchInvitations();
     } catch (error) {
       console.error('Failed to cancel invitation:', error);

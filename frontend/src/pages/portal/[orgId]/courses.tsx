@@ -11,7 +11,7 @@ import {
   BarChart3
 } from 'lucide-react';
 import PortalLayout from '@/components/common/PortalLayout';
-import { api } from '@/services/api';
+import { coursesApi } from '@/services/api';
 
 interface Course {
   id: string;
@@ -41,22 +41,24 @@ export default function PortalCourses() {
   }, [orgId]);
 
   const fetchCourses = async () => {
+    if (typeof orgId !== 'string') return;
+
     try {
-      const res = await api.get(`/organizations/${orgId}/courses`);
-      setCourses(res.data);
+      // Fetch all published courses
+      const data = await coursesApi.list();
+      setCourses((data.courses || data || []).map((c: any) => ({
+        id: c.id,
+        title: c.title,
+        description: c.description,
+        difficulty: c.difficulty,
+        duration_hours: c.duration_hours || 1,
+        modules_count: c.modules_count || c.modules?.length || 0,
+        enrolled_members: c.enrolled_members || 0,
+        completion_rate: c.completion_rate || 0,
+        avg_progress: c.avg_progress || 0
+      })));
     } catch (error) {
-      // Fallback - fetch all courses
-      try {
-        const res = await api.get('/courses');
-        setCourses(res.data.map((c: any) => ({
-          ...c,
-          enrolled_members: 0,
-          completion_rate: 0,
-          avg_progress: 0
-        })));
-      } catch {
-        setCourses([]);
-      }
+      setCourses([]);
     } finally {
       setLoading(false);
     }

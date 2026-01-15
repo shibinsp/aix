@@ -13,7 +13,7 @@ import {
   Calendar
 } from 'lucide-react';
 import PortalLayout from '@/components/common/PortalLayout';
-import { api } from '@/services/api';
+import { analyticsApi } from '@/services/api';
 
 interface AnalyticsData {
   total_members: number;
@@ -58,9 +58,11 @@ export default function PortalAnalytics() {
   }, [orgId, dateRange]);
 
   const fetchAnalytics = async () => {
+    if (typeof orgId !== 'string') return;
+
     try {
-      const res = await api.get(`/organizations/${orgId}/analytics?range=${dateRange}`);
-      setAnalytics(res.data);
+      const data = await analyticsApi.getOrg(orgId);
+      setAnalytics(data);
     } catch (error) {
       // Fallback data
       setAnalytics({

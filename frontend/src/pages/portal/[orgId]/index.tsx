@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import PortalLayout from '@/components/common/PortalLayout';
 import { useAuthStore } from '@/store/authStore';
-import { api } from '@/services/api';
+import { organizationsApi } from '@/services/api';
 
 interface OrgStats {
   total_members: number;
@@ -47,10 +47,19 @@ export default function PortalDashboard() {
   }, [orgId]);
 
   const fetchDashboardData = async () => {
+    if (typeof orgId !== 'string') return;
+
     try {
-      // Fetch organization stats
-      const statsRes = await api.get(`/organizations/${orgId}/stats`);
-      setStats(statsRes.data);
+      // Fetch organization dashboard data
+      const dashboardData = await organizationsApi.getDashboard(orgId);
+      setStats({
+        total_members: dashboardData.total_members || 0,
+        total_batches: dashboardData.total_batches || 0,
+        active_batches: dashboardData.active_batches || 0,
+        pending_invitations: dashboardData.pending_invitations || 0,
+        avg_progress: dashboardData.avg_progress || 0,
+        total_completions: dashboardData.total_completions || 0
+      });
     } catch (error) {
       // Use fallback data if API not available
       setStats({

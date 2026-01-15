@@ -13,7 +13,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import PortalLayout from '@/components/common/PortalLayout';
-import { api } from '@/services/api';
+import { organizationsApi } from '@/services/api';
 
 interface Member {
   id: string;
@@ -44,9 +44,11 @@ export default function PortalMembers() {
   }, [orgId]);
 
   const fetchMembers = async () => {
+    if (typeof orgId !== 'string') return;
+
     try {
-      const res = await api.get(`/organizations/${orgId}/members`);
-      setMembers(res.data);
+      const res = await organizationsApi.getMembers(orgId);
+      setMembers(res.members || res || []);
     } catch (error) {
       // Use empty array if API not available
       setMembers([]);
@@ -56,10 +58,10 @@ export default function PortalMembers() {
   };
 
   const handleRoleChange = async (memberId: string, newRole: string) => {
+    if (typeof orgId !== 'string') return;
+
     try {
-      await api.put(`/organizations/${orgId}/members/${memberId}/role`, {
-        role: newRole
-      });
+      await organizationsApi.updateMember(orgId, memberId, { role: newRole });
       setMembers(members.map(m =>
         m.id === memberId ? { ...m, org_role: newRole } : m
       ));
