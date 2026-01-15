@@ -137,7 +137,8 @@ export default function OrganizationMembers() {
                   member={member}
                   onEdit={() => setEditingMember(member)}
                   onRemove={() => {
-                    if (confirm(`Remove ${member.user.full_name || member.user.email} from the organization?`)) {
+                    const userName = member.user?.full_name || member.user?.email || 'this member';
+                    if (confirm(`Remove ${userName} from the organization?`)) {
                       removeMemberMutation.mutate(member.user_id);
                     }
                   }}
@@ -201,32 +202,37 @@ function MemberRow({
 }) {
   const [showMenu, setShowMenu] = useState(false);
 
+  // Handle cases where user data might not be populated
+  const user = member.user || { id: '', email: 'Unknown', full_name: '', is_active: false };
+  const displayName = user.full_name || user.email || 'Unknown';
+  const initial = displayName[0]?.toUpperCase() || 'U';
+
   return (
     <tr className="border-b border-cyber-accent/10 hover:bg-cyber-darker/50">
       <td className="px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-cyber-accent/20 flex items-center justify-center">
-            {member.user.avatar_url ? (
-              <img src={member.user.avatar_url} alt="" className="w-10 h-10 rounded-full" />
+            {user.avatar_url ? (
+              <img src={user.avatar_url} alt="" className="w-10 h-10 rounded-full" />
             ) : (
               <span className="text-cyber-accent font-medium">
-                {(member.user?.full_name || member.user?.email || 'U')[0].toUpperCase()}
+                {initial}
               </span>
             )}
           </div>
           <div>
-            <p className="text-white font-medium">{member.user.full_name || 'Unnamed'}</p>
-            <p className="text-sm text-gray-500">{member.user.email}</p>
+            <p className="text-white font-medium">{user.full_name || 'Unnamed'}</p>
+            <p className="text-sm text-gray-500">{user.email}</p>
           </div>
         </div>
       </td>
       <td className="px-6 py-4">
-        <span className={`text-xs px-2 py-1 rounded-full ${roleColors[member.org_role]}`}>
-          {member.org_role}
+        <span className={`text-xs px-2 py-1 rounded-full ${roleColors[member.org_role] || 'bg-gray-500/20 text-gray-400'}`}>
+          {member.org_role || 'member'}
         </span>
       </td>
       <td className="px-6 py-4">
-        {member.is_active && member.user.is_active ? (
+        {member.is_active && user.is_active ? (
           <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-400">
             Active
           </span>
@@ -237,7 +243,7 @@ function MemberRow({
         )}
       </td>
       <td className="px-6 py-4 text-sm text-gray-400">
-        {new Date(member.joined_at).toLocaleDateString()}
+        {member.joined_at ? new Date(member.joined_at).toLocaleDateString() : 'N/A'}
       </td>
       <td className="px-6 py-4 text-right">
         <div className="relative inline-block">
@@ -404,7 +410,7 @@ function EditRoleModal({
         </div>
 
         <p className="text-gray-400 mb-4">
-          Change role for <span className="text-white">{member.user.full_name || member.user.email}</span>
+          Change role for <span className="text-white">{member.user?.full_name || member.user?.email || 'this member'}</span>
         </p>
 
         <div className="space-y-2 mb-6">

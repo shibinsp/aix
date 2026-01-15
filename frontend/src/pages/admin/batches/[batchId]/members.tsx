@@ -73,8 +73,8 @@ export default function BatchMembers() {
     let aVal: any, bVal: any;
     switch (sortField) {
       case 'name':
-        aVal = a.user.full_name || a.user.email;
-        bVal = b.user.full_name || b.user.email;
+        aVal = a.user?.full_name || a.user?.email || '';
+        bVal = b.user?.full_name || b.user?.email || '';
         break;
       case 'progress':
         aVal = a.progress_percent;
@@ -204,7 +204,8 @@ export default function BatchMembers() {
                   member={member}
                   rank={i + 1}
                   onRemove={() => {
-                    if (confirm(`Remove ${member.user.full_name || member.user.email} from this batch?`)) {
+                    const userName = member.user?.full_name || member.user?.email || 'this member';
+                    if (confirm(`Remove ${userName} from this batch?`)) {
                       removeMemberMutation.mutate(member.user_id);
                     }
                   }}
@@ -255,6 +256,11 @@ function MemberRow({
   const [showMenu, setShowMenu] = useState(false);
   const progress = Math.round(member.progress_percent || 0);
 
+  // Handle cases where user data might not be populated
+  const user = member.user || { id: '', email: 'Unknown', full_name: '' };
+  const displayName = user.full_name || user.email || 'Unknown';
+  const initial = displayName[0]?.toUpperCase() || 'U';
+
   return (
     <tr className="border-b border-cyber-accent/10 hover:bg-cyber-darker/50">
       <td className="px-6 py-4">
@@ -268,17 +274,17 @@ function MemberRow({
             {rank}
           </div>
           <div className="w-10 h-10 rounded-full bg-cyber-accent/20 flex items-center justify-center">
-            {member.user.avatar_url ? (
-              <img src={member.user.avatar_url} alt="" className="w-10 h-10 rounded-full" />
+            {user.avatar_url ? (
+              <img src={user.avatar_url} alt="" className="w-10 h-10 rounded-full" />
             ) : (
               <span className="text-cyber-accent font-medium">
-                {(member.user?.full_name || member.user?.email || 'U')[0].toUpperCase()}
+                {initial}
               </span>
             )}
           </div>
           <div>
-            <p className="text-white font-medium">{member.user.full_name || 'Unnamed'}</p>
-            <p className="text-sm text-gray-500">{member.user.email}</p>
+            <p className="text-white font-medium">{user.full_name || 'Unnamed'}</p>
+            <p className="text-sm text-gray-500">{user.email}</p>
           </div>
         </div>
       </td>
@@ -453,12 +459,12 @@ function AddMembersModal({
                   </div>
                   <div className="w-8 h-8 rounded-full bg-cyber-accent/20 flex items-center justify-center">
                     <span className="text-cyber-accent text-sm font-medium">
-                      {(member.user.full_name || member.user.email)[0].toUpperCase()}
+                      {(member.user?.full_name || member.user?.email || 'U')[0].toUpperCase()}
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-white font-medium truncate">{member.user.full_name || 'Unnamed'}</p>
-                    <p className="text-sm text-gray-500 truncate">{member.user.email}</p>
+                    <p className="text-white font-medium truncate">{member.user?.full_name || 'Unnamed'}</p>
+                    <p className="text-sm text-gray-500 truncate">{member.user?.email || 'Unknown'}</p>
                   </div>
                 </label>
               ))}

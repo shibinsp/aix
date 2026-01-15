@@ -181,8 +181,10 @@ export default function Layout({ children }: LayoutProps) {
                 <Settings className="w-4 h-4" />
               </Link>
               <button
-                onClick={() => {
+                onClick={async () => {
                   logout();
+                  // Small delay to ensure state is persisted to localStorage
+                  await new Promise(resolve => setTimeout(resolve, 50));
                   router.push('/');
                 }}
                 className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-red-400 rounded-lg hover:bg-white/5 transition-colors"

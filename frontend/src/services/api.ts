@@ -25,9 +25,16 @@ api.interceptors.request.use((config) => {
 // Handle auth errors
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      useAuthStore.getState().logout();
+  async (error) => {
+    // Only logout on 401 if it's not the /auth/me endpoint
+    // (to avoid logout loop during initial validation)
+    const isAuthMeRequest = error.config?.url?.includes('/auth/me');
+
+    if (error.response?.status === 401 && !isAuthMeRequest) {
+      const { logout } = useAuthStore.getState();
+      logout();
+      // Small delay to ensure localStorage is updated before redirect
+      await new Promise(resolve => setTimeout(resolve, 100));
       if (typeof window !== 'undefined') {
         window.location.href = '/';
       }

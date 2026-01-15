@@ -26,19 +26,31 @@ interface PortalLayoutProps {
 export default function PortalLayout({ children, title, subtitle, orgId }: PortalLayoutProps) {
   const router = useRouter();
   const { user, isAuthenticated, logout, hasHydrated } = useAuthStore();
-  const routeOrgId = orgId || router.query.orgId as string;
+  const routeOrgId = orgId || (router.query.orgId as string);
 
   // Check if user is org admin (owner, admin, or instructor)
+  // These must be computed before hooks to avoid conditional hook calls
   const orgRole = user?.org_role?.toLowerCase();
   const isOrgAdmin = orgRole && ['owner', 'admin', 'instructor'].includes(orgRole);
   const hasOrgAccess = isOrgAdmin && user?.organization_id === routeOrgId;
 
+  // ALL HOOKS MUST BE CALLED BEFORE ANY EARLY RETURNS (React Rules of Hooks)
   // Redirect if no access (only after hydration)
   useEffect(() => {
     if (hasHydrated && isAuthenticated && !hasOrgAccess && routeOrgId) {
       router.push('/dashboard');
     }
   }, [hasHydrated, isAuthenticated, hasOrgAccess, router, routeOrgId]);
+
+  // NOW we can have early returns (after all hooks are called)
+  // Wait for router to be ready with orgId
+  if (!routeOrgId) {
+    return (
+      <div className="min-h-screen bg-cyber-darker flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-cyber-accent/30 border-t-cyber-accent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   // Show loading until hydrated
   if (!hasHydrated) {
@@ -137,8 +149,10 @@ export default function PortalLayout({ children, title, subtitle, orgId }: Porta
             </div>
           </div>
           <button
-            onClick={() => {
+            onClick={async () => {
               logout();
+              // Small delay to ensure state is persisted to localStorage
+              await new Promise(resolve => setTimeout(resolve, 50));
               router.push('/');
             }}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-red-400 rounded-lg hover:bg-white/5 transition-colors"

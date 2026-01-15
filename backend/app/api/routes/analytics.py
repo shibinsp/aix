@@ -166,14 +166,15 @@ async def get_organization_analytics(
     )
     total_members = member_count.scalar() or 0
 
-    # Active in last 7 days
+    # Active in last 7 days (based on user last_login)
     seven_days_ago = datetime.utcnow() - timedelta(days=7)
     active_result = await db.execute(
-        select(func.count(UserUsageTracking.id)).where(
-            UserUsageTracking.last_updated >= seven_days_ago,
-            UserUsageTracking.user_id.in_(
+        select(func.count(User.id)).where(
+            User.last_login >= seven_days_ago,
+            User.id.in_(
                 select(OrganizationMembership.user_id).where(
-                    OrganizationMembership.organization_id == org_id
+                    OrganizationMembership.organization_id == org_id,
+                    OrganizationMembership.is_active == True
                 )
             )
         )

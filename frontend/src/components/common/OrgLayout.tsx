@@ -24,7 +24,16 @@ interface OrgLayoutProps {
 export default function OrgLayout({ children, title, subtitle, orgId }: OrgLayoutProps) {
   const router = useRouter();
   const { user, isAuthenticated, logout, hasHydrated } = useAuthStore();
-  const routeOrgId = orgId || router.query.orgId as string;
+  const routeOrgId = orgId || (router.query.orgId as string);
+
+  // Wait for router to be ready with orgId
+  if (!routeOrgId) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   // Check if user is org admin (owner, admin, or instructor)
   const orgRole = user?.org_role?.toLowerCase();
@@ -147,8 +156,10 @@ export default function OrgLayout({ children, title, subtitle, orgId }: OrgLayou
             </div>
           </div>
           <button
-            onClick={() => {
+            onClick={async () => {
               logout();
+              // Small delay to ensure state is persisted to localStorage
+              await new Promise(resolve => setTimeout(resolve, 50));
               router.push('/');
             }}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-red-400 rounded-lg hover:bg-white/5 transition-colors"

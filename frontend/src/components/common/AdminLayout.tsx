@@ -34,10 +34,10 @@ export default function AdminLayout({ children, title, subtitle }: AdminLayoutPr
   const { user, isAuthenticated, logout, hasHydrated } = useAuthStore();
 
   // Get orgId from route for organization detail pages
-  const { orgId } = router.query;
+  const orgId = router.query.orgId as string | undefined;
   const isOrgDetailPage = router.pathname.startsWith('/admin/organizations/[orgId]');
 
-  // Check if user is admin
+  // Check if user is admin - must be computed before hooks
   const userRole = user?.role?.toLowerCase();
   const isAdmin = userRole === 'super_admin' || userRole === 'admin';
 
@@ -50,12 +50,23 @@ export default function AdminLayout({ children, title, subtitle }: AdminLayoutPr
     { href: `/admin/organizations/${orgId}/limits`, icon: Gauge, label: 'Limits' },
   ] : [];
 
+  // ALL HOOKS MUST BE CALLED BEFORE ANY EARLY RETURNS (React Rules of Hooks)
   // Redirect non-admins (only after hydration)
   useEffect(() => {
     if (hasHydrated && isAuthenticated && !isAdmin) {
       router.push('/dashboard');
     }
   }, [hasHydrated, isAuthenticated, isAdmin, router]);
+
+  // NOW we can have early returns (after all hooks are called)
+  // Wait for router to be ready with orgId on detail pages
+  if (isOrgDetailPage && !orgId) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   // Show loading until hydrated
   if (!hasHydrated) {
@@ -193,8 +204,10 @@ export default function AdminLayout({ children, title, subtitle }: AdminLayoutPr
             </div>
           </div>
           <button
-            onClick={() => {
+            onClick={async () => {
               logout();
+              // Small delay to ensure state is persisted to localStorage
+              await new Promise(resolve => setTimeout(resolve, 50));
               router.push('/');
             }}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-red-400 rounded-lg hover:bg-white/5 transition-colors"
