@@ -226,7 +226,7 @@ class AdvancedCourseGenerationRequest(BaseModel):
     include_videos: bool = True
     include_wikipedia: bool = True
     include_quizzes: bool = True
-    target_lesson_length: int = Field(default=2000, ge=500, le=5000)
+    target_lesson_length: int = Field(default=2000, ge=200, le=2000)
 
 
 class CourseGenerationJobResponse(BaseModel):

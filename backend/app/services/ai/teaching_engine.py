@@ -371,6 +371,7 @@ class TeachingEngine:
     def _clean_json_response(self, response: str) -> str:
         """Clean and extract JSON from AI response."""
         import re
+        import json
 
         # Strip markdown code blocks
         response = response.strip()
@@ -392,14 +393,68 @@ class TeachingEngine:
 
         json_str = response[start:end]
 
+        # Try parsing as-is first
+        try:
+            json.loads(json_str)
+            return json_str
+        except json.JSONDecodeError:
+            pass
+
         # Common fixes for malformed JSON
         # Fix trailing commas before } or ]
         json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
         # Fix missing commas between objects
         json_str = re.sub(r'}\s*{', '},{', json_str)
-        # Fix single quotes to double quotes (be careful with apostrophes in text)
-        # Only do this for key-value patterns
+        # Fix missing commas between array elements ("] [" or "] {")
+        json_str = re.sub(r'\]\s*\[', '],[', json_str)
+        json_str = re.sub(r'\]\s*\{', '],{', json_str)
+        # Fix single quotes to double quotes for keys
         json_str = re.sub(r"'([^']+)'(\s*:)", r'"\1"\2', json_str)
+        # Fix missing commas after string values followed by quotes
+        json_str = re.sub(r'"\s*\n\s*"', '",\n"', json_str)
+        # Fix missing commas between properties (value followed by key)
+        json_str = re.sub(r'(\d)\s*\n\s*"', r'\1,\n"', json_str)
+        json_str = re.sub(r'(true|false|null)\s*\n\s*"', r'\1,\n"', json_str)
+        # Fix unescaped control characters in strings
+        json_str = re.sub(r'[\x00-\x1f]', lambda m: '\\u{:04x}'.format(ord(m.group(0))) if m.group(0) not in '\n\r\t' else m.group(0), json_str)
+
+        # Try parsing again
+        try:
+            json.loads(json_str)
+            return json_str
+        except json.JSONDecodeError:
+            pass
+
+        # More aggressive repair: fix newlines inside strings
+        # This is a character-by-character approach to find unescaped newlines in strings
+        result = []
+        in_string = False
+        escape_next = False
+        for i, char in enumerate(json_str):
+            if escape_next:
+                result.append(char)
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                result.append(char)
+                continue
+            if char == '"':
+                in_string = not in_string
+                result.append(char)
+                continue
+            if in_string and char == '\n':
+                result.append('\\n')
+                continue
+            if in_string and char == '\r':
+                result.append('\\r')
+                continue
+            if in_string and char == '\t':
+                result.append('\\t')
+                continue
+            result.append(char)
+
+        json_str = ''.join(result)
 
         return json_str
 

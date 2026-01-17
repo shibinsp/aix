@@ -983,10 +983,10 @@ export default function LearningPath() {
                   onChange={(e) => setGenerationOptions(o => ({ ...o, targetLessonLength: parseInt(e.target.value) }))}
                   className="w-full px-3 py-2 bg-cyber-darker border border-gray-700 rounded-lg text-white text-sm"
                 >
-                  <option value={1000}>1000 words (Concise)</option>
-                  <option value={2000}>2000 words (Standard)</option>
-                  <option value={3000}>3000 words (Detailed)</option>
-                  <option value={5000}>5000 words (Comprehensive)</option>
+                  <option value={200}>200 words (Brief)</option>
+                  <option value={500}>500 words (Concise)</option>
+                  <option value={1000}>1000 words (Standard)</option>
+                  <option value={2000}>2000 words (Detailed)</option>
                 </select>
               </div>
             </div>

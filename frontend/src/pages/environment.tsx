@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Terminal, Monitor, Play, Square, RotateCcw, Loader2,
-  Clock, HardDrive, AlertCircle, ExternalLink, Wifi, WifiOff
+  Clock, AlertCircle, ExternalLink, Wifi, WifiOff
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { environmentsApi, limitsApi } from '@/services/api';
@@ -77,7 +77,7 @@ export default function EnvironmentPage() {
   }
 
   const environments = environmentsData || {};
-  const limits: EnvironmentLimits = limitsData || {
+  const limits: EnvironmentLimits = limitsData?.limits || {
     max_terminal_hours_monthly: 30,
     max_desktop_hours_monthly: 10,
     max_storage_gb: 2,
@@ -92,18 +92,6 @@ export default function EnvironmentPage() {
         <p className="text-gray-400">
           Access your persistent terminal and desktop environments
         </p>
-      </div>
-
-      {/* Info Banner */}
-      <div className="mb-6 p-4 bg-cyber-accent/10 border border-cyber-accent/30 rounded-lg flex items-start gap-3">
-        <HardDrive className="w-5 h-5 text-cyber-accent mt-0.5" />
-        <div>
-          <p className="text-cyber-accent font-medium">Shared Storage</p>
-          <p className="text-sm text-gray-400">
-            Your terminal and desktop share the same storage volume at <code className="text-cyber-accent">/home/alphha</code>.
-            Files created in one environment are accessible in the other.
-          </p>
-        </div>
       </div>
 
       {/* Environment Cards */}
@@ -133,14 +121,14 @@ export default function EnvironmentPage() {
             unit="hrs"
           />
           <UsageStat
-            label="Desktop Hours"
+            label="VM Hours"
             used={Math.round((environments.desktop?.monthly_usage_minutes || 0) / 60 * 10) / 10}
             max={limits.max_desktop_hours_monthly}
             unit="hrs"
           />
           <UsageStat
             label="Storage"
-            used={0} // Would need to fetch actual usage
+            used={0}
             max={limits.max_storage_gb}
             unit="GB"
           />

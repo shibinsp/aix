@@ -53,6 +53,14 @@ spec:
                 name: backend
                 port:
                   number: 8000
+          # Environment terminal access (proxied via ExternalName service)
+          - path: /env/terminal
+            pathType: Prefix
+            backend:
+              service:
+                name: env-terminal-proxy
+                port:
+                  number: 3000
           # All other routes to frontend
           - path: /
             pathType: Prefix

@@ -236,6 +236,8 @@ Return JSON:
 
     def _clean_json_response(self, response: str) -> str:
         """Clean and extract JSON from AI response."""
+        import json
+
         response = response.strip()
 
         # Remove markdown code blocks
@@ -259,10 +261,45 @@ Return JSON:
             if start != -1 and end > start:
                 response = response[start:end]
 
+        # Try parsing as-is first
+        try:
+            json.loads(response)
+            return response
+        except json.JSONDecodeError:
+            pass
+
         # Fix common JSON issues
         response = re.sub(r',\s*([}\]])', r'\1', response)  # Remove trailing commas
+        response = re.sub(r'}\s*{', '},{', response)  # Fix missing commas between objects
+        response = re.sub(r'\]\s*\[', '],[', response)  # Fix missing commas between arrays
+        response = re.sub(r'"\s*\n\s*"', '",\n"', response)  # Fix missing commas after strings
 
-        return response
+        # Fix unescaped newlines inside strings
+        result = []
+        in_string = False
+        escape_next = False
+        for char in response:
+            if escape_next:
+                result.append(char)
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                result.append(char)
+                continue
+            if char == '"':
+                in_string = not in_string
+                result.append(char)
+                continue
+            if in_string and char == '\n':
+                result.append('\\n')
+                continue
+            if in_string and char == '\r':
+                result.append('\\r')
+                continue
+            result.append(char)
+
+        return ''.join(result)
 
     def _validate_question(
         self,

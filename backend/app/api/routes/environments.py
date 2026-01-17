@@ -5,10 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from uuid import UUID
+import os
 import structlog
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_permission
+from app.core.config import settings
 from app.models.user import User
 from app.models.admin import Permission
 from app.models.environment import (
@@ -23,6 +25,14 @@ from app.schemas.environment import (
 from app.services.environments import persistent_env_manager
 
 logger = structlog.get_logger()
+
+
+def is_running_in_kubernetes() -> bool:
+    """Check if we're running inside a Kubernetes cluster."""
+    return (
+        settings.K8S_IN_CLUSTER or
+        os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
+    )
 
 router = APIRouter()
 
@@ -79,8 +89,17 @@ async def start_environment(
 
     environment_type = EnvironmentType(env_type)
 
-    # Check resource limits
-    limits = current_user.get_effective_limits()
+    # Check resource limits - use default limits if method not available
+    try:
+        limits = current_user.get_effective_limits()
+    except Exception as e:
+        logger.warning(f"Could not get effective limits: {e}, using defaults")
+        limits = {
+            "enable_persistent_vm": True,
+            "max_terminal_hours_monthly": 30,
+            "max_desktop_hours_monthly": 10,
+        }
+
     if not limits.get("enable_persistent_vm", True):
         raise HTTPException(status_code=403, detail="Persistent environments are not enabled for your account")
 
@@ -103,6 +122,35 @@ async def start_environment(
 
     if used_minutes >= max_hours * 60:
         raise HTTPException(status_code=403, detail=f"Monthly {env_type} usage limit exceeded")
+
+    # Use Kubernetes manager if running in K8s
+    if is_running_in_kubernetes():
+        from app.services.environments.k8s_env_manager import k8s_env_manager
+
+        try:
+            connection_info = await k8s_env_manager.start_environment(
+                str(current_user.id),
+                env_type,
+                db
+            )
+
+            # Get refreshed environment
+            env_result = await db.execute(
+                select(PersistentEnvironment).where(
+                    PersistentEnvironment.user_id == current_user.id,
+                    PersistentEnvironment.env_type == environment_type
+                )
+            )
+            environment = env_result.scalar_one_or_none()
+
+            logger.info("Environment started with Kubernetes",
+                       env_id=str(environment.id), env_type=env_type, user_id=str(current_user.id))
+
+            return EnvironmentResponse.model_validate(environment)
+
+        except Exception as e:
+            logger.error("Failed to start Kubernetes environment", error=str(e))
+            raise HTTPException(status_code=500, detail=f"Failed to start environment: {str(e)}")
 
     # Check if Docker is available
     docker_available = await persistent_env_manager.check_docker_available()
@@ -224,6 +272,20 @@ async def stop_environment(
         raise HTTPException(status_code=400, detail="Environment is not running")
 
     try:
+        # Use Kubernetes manager if running in K8s
+        if is_running_in_kubernetes():
+            from app.services.environments.k8s_env_manager import k8s_env_manager
+
+            await k8s_env_manager.stop_environment(
+                str(current_user.id),
+                env_type,
+                db
+            )
+
+            await db.refresh(environment)
+            logger.info("Environment stopped via Kubernetes", env_id=str(environment.id), env_type=env_type)
+            return EnvironmentResponse.model_validate(environment)
+
         # Check if Docker is available for actual container stop
         docker_available = await persistent_env_manager.check_docker_available()
 

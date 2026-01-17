@@ -50,3 +50,13 @@ rules:
     resources: ["secrets"]
     verbs: ["create", "delete", "get", "list"]
     resourceNames: []  # Can only manage secrets with specific names
+
+  # PersistentVolumeClaims for user data storage (environments)
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["create", "delete", "get", "list", "watch"]
+
+  # Traefik IngressRoutes for environment access
+  - apiGroups: ["traefik.io"]
+    resources: ["ingressroutes", "middlewares"]
+    verbs: ["create", "delete", "get", "list", "watch"]
