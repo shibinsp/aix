@@ -1,0 +1,85 @@
+# Lab Pod Template - Desktop (VNC-based)
+# Uses noVNC for browser-based desktop access
+# Note: This file is for reference - actual pods are created dynamically
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lab-SESSIONID-desktop
+  namespace: cyberaix-labs
+  labels:
+    app: cyberaix-lab
+    session-id: "SESSIONID"
+    user-id: "USERID"
+    preset: "desktop"
+    cyberaix.role: "target"
+  annotations:
+    cyberaix.io/created-at: "TIMESTAMP"
+    cyberaix.io/expires-at: "EXPIRY"
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  containers:
+    - name: lab
+      image: consol/ubuntu-xfce-vnc:latest
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: LAB_SESSION_ID
+          value: "SESSIONID"
+        - name: LAB_PRESET
+          value: "desktop"
+        - name: VNC_PW
+          value: "toor"
+        - name: VNC_RESOLUTION
+          value: "1280x720"
+        - name: VNC_COL_DEPTH
+          value: "24"
+      ports:
+        - containerPort: 5901
+          name: vnc
+          protocol: TCP
+        - containerPort: 6901
+          name: novnc
+          protocol: TCP
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: "2"
+          memory: 2Gi
+      securityContext:
+        runAsUser: 0  # Desktop images often need root
+      volumeMounts:
+        - name: lab-workspace
+          mountPath: /workspace
+        - name: shm
+          mountPath: /dev/shm
+  volumes:
+    - name: lab-workspace
+      emptyDir:
+        sizeLimit: 2Gi
+    - name: shm
+      emptyDir:
+        medium: Memory
+        sizeLimit: 512Mi
+  activeDeadlineSeconds: 7200  # 2 hours max
+  terminationGracePeriodSeconds: 30
+---
+# Service for VNC access (created dynamically per session)
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-SESSIONID-vnc
+  namespace: cyberaix-labs
+  labels:
+    app: cyberaix-lab
+    session-id: "SESSIONID"
+spec:
+  type: ClusterIP
+  ports:
+    - name: novnc
+      port: 6901
+      targetPort: 6901
+  selector:
+    session-id: "SESSIONID"

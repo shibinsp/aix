@@ -1,0 +1,16 @@
+# Backend Pod Disruption Budget
+# Ensures high availability during voluntary disruptions
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: cyberaix-system
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: backend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend

@@ -1,0 +1,26 @@
+# PostgreSQL Initialization ConfigMap
+# Contains init scripts for database setup
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: cyberaix-data
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: database
+data:
+  init.sql: |
+    -- Create extensions
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+    -- Grant privileges
+    GRANT ALL PRIVILEGES ON DATABASE cyberx TO cyberx;
+
+    -- Create schemas if needed
+    CREATE SCHEMA IF NOT EXISTS public;
+    GRANT ALL ON SCHEMA public TO cyberx;
+
+    -- Set default search path
+    ALTER DATABASE cyberx SET search_path TO public;

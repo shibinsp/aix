@@ -1,0 +1,19 @@
+# PostgreSQL Persistent Volume Claim
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: cyberaix-data
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: database
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # Use the Longhorn storage class for multi-node replication
+  # Change to cyberaix-local for single-node testing
+  storageClassName: cyberaix-storage
+  resources:
+    requests:
+      storage: 20Gi

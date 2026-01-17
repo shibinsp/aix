@@ -1,0 +1,39 @@
+# Kubernetes Namespaces for AI CyberX
+# Three namespaces for logical separation:
+# - cyberaix-system: Backend API and Frontend applications
+# - cyberaix-data: Databases (PostgreSQL, Redis)
+# - cyberaix-labs: Dynamic lab pods for users
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cyberaix-system
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: system
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cyberaix-data
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: data
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cyberaix-labs
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: labs
+    # Labs namespace has more relaxed security for cybersecurity training containers
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged

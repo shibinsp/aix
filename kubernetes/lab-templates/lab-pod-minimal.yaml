@@ -1,0 +1,68 @@
+# Lab Pod Template - Minimal (Terminal-based)
+# This is a template used by the K8s lab manager to create lab pods
+# Note: This file is for reference - actual pods are created dynamically
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lab-SESSIONID-target
+  namespace: cyberaix-labs
+  labels:
+    app: cyberaix-lab
+    session-id: "SESSIONID"
+    user-id: "USERID"
+    preset: "minimal"
+    cyberaix.role: "target"
+  annotations:
+    cyberaix.io/created-at: "TIMESTAMP"
+    cyberaix.io/expires-at: "EXPIRY"
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: false  # Some labs need root
+  containers:
+    - name: lab
+      image: alpine:latest
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/sh
+        - -c
+        - |
+          # Install basic tools
+          apk add --no-cache bash curl wget htop
+          # Keep container running
+          while true; do sleep 3600; done
+      env:
+        - name: LAB_SESSION_ID
+          value: "SESSIONID"
+        - name: LAB_PRESET
+          value: "minimal"
+        - name: TERM
+          value: "xterm-256color"
+        - name: PS1
+          value: "\\u@lab:\\w\\$ "
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+          add:
+            - NET_RAW  # For ping, traceroute
+      volumeMounts:
+        - name: lab-workspace
+          mountPath: /workspace
+  volumes:
+    - name: lab-workspace
+      emptyDir:
+        sizeLimit: 1Gi
+  # Limit pod lifetime
+  activeDeadlineSeconds: 7200  # 2 hours max
+  terminationGracePeriodSeconds: 10

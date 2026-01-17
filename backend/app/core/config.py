@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     LAB_TIMEOUT_MINUTES: int = 120
     MAX_CONCURRENT_LABS: int = 50
 
+    # Kubernetes Lab Settings
+    K8S_LAB_NAMESPACE: str = "cyberaix-labs"
+    K8S_IN_CLUSTER: bool = False  # Set to True when running in Kubernetes
+    K8S_POD_TIMEOUT: int = 120  # Seconds to wait for pod to be ready
+    K8S_POD_TTL: int = 7200  # Pod lifetime in seconds (2 hours)
+
     # VM Settings (QEMU/KVM)
     LAB_VM_PATH: str = "./data/vms"  # Configurable via LAB_VM_PATH env
     LAB_TEMPLATE_PATH: str = "./data/lab_templates/alphaLinux"  # Configurable via LAB_TEMPLATE_PATH env

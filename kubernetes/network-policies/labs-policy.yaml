@@ -1,0 +1,95 @@
+# Network Policy for Lab Pods
+# Allows backend to exec into lab pods
+# Restricts lab pods from accessing cluster resources
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-exec
+  namespace: cyberaix-labs
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: cyberaix-lab
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow backend to exec into lab pods
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cyberaix-system
+          podSelector:
+            matchLabels:
+              app: backend
+  egress:
+    # DNS resolution for basic connectivity
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow internet access for cybersecurity training
+    # Labs need to download tools, access CTF challenges, etc.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              # Block access to cluster internal networks
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 22
+---
+# Policy for isolated lab environments (no external access)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolated-lab-template
+  namespace: cyberaix-labs
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: network-policy
+    template: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app: cyberaix-lab
+      isolation: "strict"
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only allow backend exec
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cyberaix-system
+          podSelector:
+            matchLabels:
+              app: backend
+  egress:
+    # Only DNS - no internet access
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53

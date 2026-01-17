@@ -1,0 +1,124 @@
+# Backend Deployment
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: cyberaix-system
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: backend
+    app: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: backend
+        app.kubernetes.io/name: cyberaix
+        app.kubernetes.io/component: backend
+    spec:
+      serviceAccountName: cyberaix-backend
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - backend
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: backend
+          image: cyberaix/backend:v1.0.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: api-secrets
+            - secretRef:
+                name: db-connection
+          env:
+            # Kubernetes-specific settings
+            - name: K8S_IN_CLUSTER
+              value: "true"
+            - name: K8S_LAB_NAMESPACE
+              value: "cyberaix-labs"
+            - name: K8S_POD_TIMEOUT
+              value: "120"
+          volumeMounts:
+            - name: app-data
+              mountPath: /app/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+      volumes:
+        - name: app-data
+          persistentVolumeClaim:
+            claimName: app-data
+---
+# PVC for app data (vector DB, etc.)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: app-data
+  namespace: cyberaix-system
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: backend
+spec:
+  accessModes:
+    - ReadWriteMany  # RWX for shared access across replicas
+  storageClassName: cyberaix-storage
+  resources:
+    requests:
+      storage: 10Gi

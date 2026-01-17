@@ -1,4 +1,5 @@
 import asyncio
+import os
 import secrets
 import subprocess
 from datetime import datetime, timedelta, timezone
@@ -10,6 +11,15 @@ import json
 from app.core.config import settings
 
 logger = structlog.get_logger()
+
+
+def is_running_in_kubernetes() -> bool:
+    """Check if we're running inside a Kubernetes cluster."""
+    # Check for Kubernetes service account token
+    return (
+        settings.K8S_IN_CLUSTER or
+        os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
+    )
 
 # Alphha Linux Docker image presets
 # Custom images (built from our Dockerfiles) and fallback public images
@@ -750,3 +760,110 @@ class LabManager:
 
 # Singleton instance
 lab_manager = LabManager()
+
+
+# Unified Lab Manager that routes to Docker or Kubernetes
+class UnifiedLabManager:
+    """
+    Unified lab manager that automatically routes to the appropriate backend.
+
+    In Kubernetes: Uses K8sLabManager for pod-based labs
+    In Docker: Uses LabManager for container-based labs
+    """
+
+    def __init__(self):
+        self._docker_manager: Optional[LabManager] = None
+        self._k8s_manager = None  # Lazy import to avoid issues when K8s not available
+        self._use_k8s: Optional[bool] = None
+
+    async def _get_manager(self):
+        """Get the appropriate lab manager based on environment."""
+        if self._use_k8s is None:
+            self._use_k8s = is_running_in_kubernetes()
+
+            if self._use_k8s:
+                logger.info("Using Kubernetes lab manager")
+                from app.services.labs.k8s_lab_manager import k8s_lab_manager
+                self._k8s_manager = k8s_lab_manager
+            else:
+                logger.info("Using Docker lab manager")
+                self._docker_manager = lab_manager
+
+        return self._k8s_manager if self._use_k8s else self._docker_manager
+
+    @property
+    def is_kubernetes(self) -> bool:
+        """Check if we're using Kubernetes backend."""
+        return self._use_k8s or is_running_in_kubernetes()
+
+    async def check_available(self) -> bool:
+        """Check if the lab backend is available."""
+        manager = await self._get_manager()
+        if self._use_k8s:
+            return await manager.check_k8s_available()
+        return await manager.check_docker_available()
+
+    async def start_lab_session(
+        self,
+        session_id: str,
+        user_id: str,
+        preset: str = "minimal",
+        lab_config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Start a new lab session."""
+        manager = await self._get_manager()
+
+        if self._use_k8s:
+            return await manager.start_lab_session(
+                session_id=session_id,
+                user_id=user_id,
+                preset=preset,
+                lab_config=lab_config,
+            )
+        else:
+            # Docker manager uses start_alphha_linux_lab for preset-based labs
+            return await manager.start_alphha_linux_lab(
+                session_id=session_id,
+                user_id=user_id,
+                preset=preset,
+                lab_config=lab_config,
+            )
+
+    async def stop_lab_session(self, session_id: str) -> bool:
+        """Stop a lab session."""
+        manager = await self._get_manager()
+        return await manager.stop_lab_session(session_id)
+
+    async def get_session_status(self, session_id: str) -> Dict[str, Any]:
+        """Get the status of a lab session."""
+        manager = await self._get_manager()
+        return await manager.get_session_status(session_id)
+
+    async def list_active_sessions(self) -> List[Dict[str, Any]]:
+        """List all active lab sessions."""
+        manager = await self._get_manager()
+        return await manager.list_active_sessions()
+
+    async def cleanup_expired_sessions(self) -> int:
+        """Cleanup all expired lab sessions."""
+        manager = await self._get_manager()
+        return await manager.cleanup_expired_sessions()
+
+    async def get_pod_or_container_name(self, session_id: str, role: str = "target") -> Optional[str]:
+        """Get the pod or container name for a session."""
+        manager = await self._get_manager()
+
+        if self._use_k8s:
+            return await manager.get_pod_name_for_session(session_id, role)
+        else:
+            # For Docker, build container name
+            session = manager.active_sessions.get(session_id)
+            if session:
+                for container in session.get("containers", []):
+                    if container.get("role") == role:
+                        return container["name"]
+            return f"cyberx_{session_id[:8]}_{role}"
+
+
+# Unified singleton instance
+unified_lab_manager = UnifiedLabManager()

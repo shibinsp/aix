@@ -1,0 +1,18 @@
+# RoleBinding to allow backend ServiceAccount to manage labs
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: lab-manager-binding
+  namespace: cyberaix-labs
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: backend
+subjects:
+  - kind: ServiceAccount
+    name: cyberaix-backend
+    namespace: cyberaix-system
+roleRef:
+  kind: Role
+  name: lab-manager
+  apiGroup: rbac.authorization.k8s.io

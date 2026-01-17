@@ -1,0 +1,20 @@
+# Redis Service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: cyberaix-data
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: cache
+    app: redis
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: 6379
+      protocol: TCP
+      name: redis
+  selector:
+    app: redis

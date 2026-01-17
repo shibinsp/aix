@@ -1,0 +1,17 @@
+# Default Deny Policy for Labs Namespace
+# Blocks all ingress/egress traffic by default
+# Individual lab pods get their own policies
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: cyberaix-labs
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

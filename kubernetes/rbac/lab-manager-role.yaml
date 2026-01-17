@@ -1,0 +1,52 @@
+# Role for managing lab pods in cyberaix-labs namespace
+# This role allows the backend to create, delete, and manage lab pods
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: lab-manager
+  namespace: cyberaix-labs
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: backend
+rules:
+  # Pod management for lab environments
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "delete", "get", "list", "watch", "patch", "update"]
+
+  # Pod exec for terminal access
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+
+  # Pod logs for debugging
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+
+  # Pod status for monitoring
+  - apiGroups: [""]
+    resources: ["pods/status"]
+    verbs: ["get"]
+
+  # Service management for lab connectivity
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["create", "delete", "get", "list", "watch"]
+
+  # NetworkPolicy for lab isolation
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "delete", "get", "list", "watch"]
+
+  # ConfigMaps for lab configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete", "get", "list", "watch"]
+
+  # Secrets for lab-specific credentials (limited)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "delete", "get", "list"]
+    resourceNames: []  # Can only manage secrets with specific names

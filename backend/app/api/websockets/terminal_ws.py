@@ -1,19 +1,38 @@
 import asyncio
 import json
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 from uuid import UUID
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import structlog
 
+from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.security import decode_access_token
 from app.models.lab import LabSession, LabStatus
 from app.services.labs.terminal_service import TerminalService
+from app.services.labs.lab_manager import is_running_in_kubernetes
 
 logger = structlog.get_logger()
 router = APIRouter()
+
+
+def get_terminal_service(container_or_pod_name: str, namespace: str = None):
+    """
+    Get the appropriate terminal service based on environment.
+
+    In Kubernetes: Uses K8sTerminalServiceAlt (kubectl-based PTY)
+    In Docker: Uses TerminalService (docker exec-based PTY)
+    """
+    if is_running_in_kubernetes():
+        from app.services.labs.k8s_terminal_service import K8sTerminalServiceAlt
+        return K8sTerminalServiceAlt(
+            pod_name=container_or_pod_name,
+            namespace=namespace or settings.K8S_LAB_NAMESPACE,
+        )
+    else:
+        return TerminalService(container_name=container_or_pod_name)
 
 
 class TerminalConnectionManager:
@@ -21,24 +40,25 @@ class TerminalConnectionManager:
 
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
-        self.terminal_services: Dict[str, TerminalService] = {}
+        self.terminal_services: Dict[str, Union[TerminalService, any]] = {}
 
     async def connect(
         self,
         websocket: WebSocket,
         session_id: str,
-        container_name: str,
+        container_or_pod_name: str,
         user_id: str,
-    ) -> Optional[TerminalService]:
-        """Connect a WebSocket to a container terminal.
+        namespace: str = None,
+    ) -> Optional[Union[TerminalService, any]]:
+        """Connect a WebSocket to a container or pod terminal.
 
         Note: websocket.accept() should be called before this method.
         """
-        connection_key = f"{session_id}:{container_name}:{user_id}"
+        connection_key = f"{session_id}:{container_or_pod_name}:{user_id}"
         self.active_connections[connection_key] = websocket
 
-        # Create terminal service for this connection
-        terminal = TerminalService(container_name)
+        # Create terminal service for this connection (auto-detects K8s vs Docker)
+        terminal = get_terminal_service(container_or_pod_name, namespace)
         started = await terminal.start()
 
         if started:
@@ -46,21 +66,22 @@ class TerminalConnectionManager:
             logger.info(
                 "Terminal connected",
                 session_id=session_id,
-                container=container_name,
+                target=container_or_pod_name,
                 user_id=user_id,
+                backend="kubernetes" if is_running_in_kubernetes() else "docker",
             )
             return terminal
         else:
             logger.error(
                 "Failed to start terminal",
                 session_id=session_id,
-                container=container_name,
+                target=container_or_pod_name,
             )
             return None
 
-    async def disconnect(self, session_id: str, container_name: str, user_id: str):
+    async def disconnect(self, session_id: str, container_or_pod_name: str, user_id: str):
         """Disconnect and cleanup terminal connection."""
-        connection_key = f"{session_id}:{container_name}:{user_id}"
+        connection_key = f"{session_id}:{container_or_pod_name}:{user_id}"
 
         if connection_key in self.terminal_services:
             await self.terminal_services[connection_key].stop()
@@ -72,7 +93,7 @@ class TerminalConnectionManager:
         logger.info(
             "Terminal disconnected",
             session_id=session_id,
-            container=container_name,
+            target=container_or_pod_name,
         )
 
 
@@ -158,22 +179,31 @@ async def websocket_terminal(
             await websocket.close(code=4004, reason="Lab session not found or not running")
             return
 
-        # Build container name from session
-        container_name = f"cyberx_{session_id[:8]}_{container}"
-        logger.info(f"Terminal connecting to container: {container_name}")
+        # Build container or pod name from session based on environment
+        if is_running_in_kubernetes():
+            # In Kubernetes, pod names follow: lab-{session_id[:8]}-{role}
+            target_name = f"lab-{session_id[:8]}-{container}"
+            namespace = settings.K8S_LAB_NAMESPACE
+            logger.info(f"Terminal connecting to pod: {target_name} in namespace {namespace}")
+        else:
+            # In Docker, container names follow: cyberx_{session_id[:8]}_{role}
+            target_name = f"cyberx_{session_id[:8]}_{container}"
+            namespace = None
+            logger.info(f"Terminal connecting to container: {target_name}")
 
     # Connect terminal
     terminal = await terminal_manager.connect(
         websocket=websocket,
         session_id=session_id,
-        container_name=container_name,
+        container_or_pod_name=target_name,
         user_id=user_id,
+        namespace=namespace,
     )
 
     if not terminal:
         await websocket.send_json({
             "type": "error",
-            "message": "Failed to connect to container terminal. Container may not be running.",
+            "message": "Failed to connect to terminal. Target may not be running.",
         })
         await websocket.close(code=1011, reason="Failed to start terminal")
         return
@@ -181,7 +211,8 @@ async def websocket_terminal(
     # Send connection success
     await websocket.send_json({
         "type": "connected",
-        "container": container_name,
+        "target": target_name,
+        "backend": "kubernetes" if is_running_in_kubernetes() else "docker",
         "message": f"Connected to {container} terminal",
     })
 
@@ -222,7 +253,7 @@ async def websocket_terminal(
             await output_task
         except asyncio.CancelledError:
             pass
-        await terminal_manager.disconnect(session_id, container_name, user_id)
+        await terminal_manager.disconnect(session_id, target_name, user_id)
 
 
 async def read_terminal_output(websocket: WebSocket, terminal: TerminalService):

@@ -1,0 +1,53 @@
+# Database Migration Job
+# Runs Alembic migrations before deploying the application
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migration
+  namespace: cyberaix-system
+  labels:
+    app.kubernetes.io/name: cyberaix
+    app.kubernetes.io/component: migration
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: db-migration
+        app.kubernetes.io/name: cyberaix
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: migration
+          image: cyberaix/backend:v1.0.0
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for database to be ready..."
+              sleep 10
+              echo "Running database migrations..."
+              alembic upgrade head
+              echo "Migrations completed successfully!"
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: api-secrets
+            - secretRef:
+                name: db-connection
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
