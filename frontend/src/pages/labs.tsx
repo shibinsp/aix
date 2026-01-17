@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import dynamic from 'next/dynamic';
 import {
   Terminal,
+  Monitor,
   Clock,
   Trophy,
   Play,
@@ -12,24 +12,14 @@ import {
   Loader2,
   ChevronLeft,
   BookOpen,
-  CheckCircle,
   Circle,
   Lightbulb,
-  Send
+  Send,
+  ExternalLink
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { labsApi } from '@/services/api';
 import ReactMarkdown from 'react-markdown';
-
-// Dynamic import for LabTerminal to avoid SSR issues with xterm
-const LabTerminal = dynamic(() => import('@/components/labs/LabTerminal'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center h-full bg-[#0d1117]">
-      <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
-    </div>
-  ),
-});
 
 const LAB_TYPES = ['tutorial', 'challenge', 'ctf', 'simulation'];
 const DIFFICULTIES = ['beginner', 'intermediate', 'advanced', 'expert'];
@@ -37,14 +27,14 @@ const DIFFICULTIES = ['beginner', 'intermediate', 'advanced', 'expert'];
 export default function Labs() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { isAuthenticated, token, hasHydrated } = useAuthStore();
+  const { isAuthenticated, hasHydrated } = useAuthStore();
   const [labType, setLabType] = useState('');
   const [difficulty, setDifficulty] = useState('');
   const [selectedLab, setSelectedLab] = useState<any>(null);
   const [activeSession, setActiveSession] = useState<any>(null);
   const [flagInput, setFlagInput] = useState('');
   const [flagResult, setFlagResult] = useState<any>(null);
-  const [activeContainer, setActiveContainer] = useState('target');
+  const [desktopLoading, setDesktopLoading] = useState(true);
 
   const { data: labs, isLoading } = useQuery({
     queryKey: ['labs', { labType, difficulty }],
@@ -114,12 +104,7 @@ export default function Labs() {
 
     try {
       setSelectedLab(lab);
-
-      // Set the active container to the first container from the infrastructure spec
-      const containers = lab.infrastructure_spec?.containers || [];
-      const firstContainer = containers[0]?.name || 'target';
-      setActiveContainer(firstContainer);
-      console.log('Setting active container to:', firstContainer);
+      setDesktopLoading(true);
 
       const result = await labsApi.startSession(lab.id);
       console.log('Lab started:', result);
@@ -138,14 +123,8 @@ export default function Labs() {
     setActiveSession(null);
     setFlagResult(null);
     setFlagInput('');
-    setActiveContainer('target');
+    setDesktopLoading(true);
   };
-
-  // Get available containers from the lab's infrastructure spec
-  const availableContainers = useMemo(() => {
-    if (!selectedLab?.infrastructure_spec?.containers) return ['target'];
-    return selectedLab.infrastructure_spec.containers.map((c: any) => c.name);
-  }, [selectedLab]);
 
   const handleSubmitFlag = () => {
     if (!flagInput.trim() || !activeSession?.id) return;
@@ -309,41 +288,55 @@ export default function Labs() {
           </div>
         </div>
 
-        {/* Right Panel - Terminal/VM */}
+        {/* Right Panel - Desktop Environment */}
         <div className="flex-1 flex flex-col">
-          {/* Container Selector (for multi-container labs) */}
-          {availableContainers.length > 1 && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-gray-900 border-b border-gray-700">
-              <span className="text-xs text-gray-400">Container:</span>
-              <div className="flex gap-1">
-                {availableContainers.map((container: string) => (
-                  <button
-                    key={container}
-                    onClick={() => setActiveContainer(container)}
-                    className={`px-3 py-1 text-xs rounded transition-colors ${
-                      activeContainer === container
-                        ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
-                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                    }`}
-                  >
-                    {container}
-                  </button>
-                ))}
-              </div>
+          {/* Desktop Header */}
+          <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700">
+            <div className="flex items-center gap-2 text-sm">
+              <Monitor className="w-4 h-4 text-cyan-400" />
+              <span className="text-gray-300">Desktop Environment</span>
             </div>
-          )}
+            {activeSession?.access_url && (
+              <a
+                href={activeSession.access_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Open in new tab
+              </a>
+            )}
+          </div>
 
-          {/* Real Terminal connected to container */}
-          {token && (
-            <LabTerminal
-              sessionId={activeSession.id}
-              containerName={activeContainer}
-              token={token}
-              onDisconnect={() => {
-                // Terminal disconnected, could show notification
-              }}
-            />
-          )}
+          {/* Desktop iframe */}
+          <div className="flex-1 relative bg-[#0d1117]">
+            {desktopLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-[#0d1117] z-10">
+                <div className="text-center">
+                  <Loader2 className="w-10 h-10 text-cyan-400 animate-spin mx-auto mb-3" />
+                  <p className="text-gray-400 text-sm">Loading desktop environment...</p>
+                </div>
+              </div>
+            )}
+            {activeSession?.access_url ? (
+              <iframe
+                src={activeSession.access_url}
+                className="w-full h-full border-0"
+                onLoad={() => setDesktopLoading(false)}
+                allow="clipboard-read; clipboard-write"
+                title="Lab Desktop Environment"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <Terminal className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                  <p className="text-gray-400">Desktop environment not available</p>
+                  <p className="text-gray-500 text-sm mt-1">Please try restarting the lab</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );

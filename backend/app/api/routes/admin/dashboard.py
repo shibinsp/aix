@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_admin
 from app.models.user import User
 from app.models.course import Course
-from app.models.lab import Lab, LabSession
+from app.models.lab import Lab, LabSession, LabStatus
 from app.schemas.admin import DashboardStats, RecentActivity
 from app.services.audit.audit_service import AuditService
 
@@ -56,7 +56,7 @@ async def get_dashboard_stats(
 
     # Active lab sessions
     active_sessions = await db.scalar(
-        select(func.count(LabSession.id)).where(LabSession.status == "active")
+        select(func.count(LabSession.id)).where(LabSession.status == LabStatus.RUNNING)
     )
 
     # Active VMs (sessions with container_id or environment has VM)

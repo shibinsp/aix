@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -28,10 +28,12 @@ import {
   Loader2,
   PanelLeftClose,
   PanelLeft,
+  FlaskConical,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
-import { coursesApi } from '@/services/api';
+import { coursesApi, labsApi, environmentsApi } from '@/services/api';
 import ContentBlockRenderer from '@/components/courses/ContentBlockRenderer';
+import SplitScreenLabViewer from '@/components/labs/SplitScreenLabViewer';
 
 interface ContentBlock {
   id: string;
@@ -48,6 +50,28 @@ interface ExternalResource {
   url: string;
   description: string;
   resource_metadata: Record<string, any>;
+}
+
+interface LabData {
+  id: string;
+  title: string;
+  description?: string;
+  difficulty: string;
+  objectives: string[];
+  instructions: string;
+  hints: string[];
+  estimated_time?: number;
+  preset?: string;
+  flags?: any[];
+}
+
+interface LabSession {
+  id: string;
+  status: string;
+  access_url?: string;
+  ssh_port?: number;
+  vnc_port?: number;
+  completed_objectives: number[];
 }
 
 interface Lesson {
@@ -67,12 +91,14 @@ interface Lesson {
   quiz_data: any;
   content_blocks: ContentBlock[];
   external_resources: ExternalResource[];
+  lab_id?: string;
+  lab?: LabData;
 }
 
 interface Module {
   id: string;
   title: string;
-  lessons: { id: string; title: string; order: number }[];
+  lessons: { id: string; title: string; order: number; lesson_type?: string }[];
 }
 
 interface Course {
@@ -83,10 +109,16 @@ interface Course {
 
 export default function LessonViewer() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { id: courseId, lessonId } = router.query;
   const { isAuthenticated, hasHydrated } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  // Lab session state
+  const [labSession, setLabSession] = useState<LabSession | null>(null);
+  const [labError, setLabError] = useState<string | null>(null);
+  const [completedObjectives, setCompletedObjectives] = useState<number[]>([]);
 
   // Fetch course for navigation
   const { data: course } = useQuery({
@@ -101,6 +133,112 @@ export default function LessonViewer() {
     queryFn: () => coursesApi.getFullLesson(courseId as string, lessonId as string),
     enabled: !!courseId && !!lessonId && isAuthenticated,
   });
+
+  // Check if this is a lab lesson (ensure boolean for React Query)
+  const isLabLesson = !!(lesson?.lesson_type === 'lab' && lesson?.lab);
+
+  // Environment status polling for lab lessons - poll ALWAYS for lab lessons (independent of labSession)
+  const { data: envStatus, isLoading: envLoading } = useQuery({
+    queryKey: ['environment-status', 'desktop'],
+    queryFn: () => environmentsApi.getStatus('desktop'),
+    enabled: !!isAuthenticated && isLabLesson,  // No labSession requirement - detect already-running environments
+    refetchInterval: 5000,  // Poll every 5 seconds
+  });
+
+  // Build environment object from polled status (for SplitScreenLabViewer)
+  // Note: getStatus returns access_url and ports inside connection_info
+  const environment = envStatus ? {
+    id: envStatus.id || 'env',
+    env_type: 'desktop' as const,  // Use const assertion for literal type
+    status: envStatus.status,
+    access_url: envStatus.connection_info?.access_url,
+    ssh_port: envStatus.connection_info?.ssh_port,
+    vnc_port: envStatus.connection_info?.vnc_port,
+  } : null;
+
+
+  // Lab session mutations
+  const startLabMutation = useMutation({
+    mutationFn: async () => {
+      if (!lesson?.lab || !courseId || !lessonId) throw new Error('Missing lab data');
+      return labsApi.startInCourse({
+        course_id: courseId as string,
+        lesson_id: lessonId as string,
+        lab_id: lesson.lab.id,
+      });
+    },
+    onSuccess: (data) => {
+      setLabSession(data);
+      setCompletedObjectives(data.completed_objectives || []);
+      setLabError(null);
+    },
+    onError: (error: any) => {
+      setLabError(error?.response?.data?.detail || 'Failed to start lab environment');
+    },
+  });
+
+  const stopLabMutation = useMutation({
+    mutationFn: async () => {
+      if (!labSession?.id) throw new Error('No active session');
+      return labsApi.endSession(labSession.id);
+    },
+    onSuccess: () => {
+      setLabSession(null);
+      setLabError(null);
+    },
+    onError: (error: any) => {
+      setLabError(error?.response?.data?.detail || 'Failed to stop lab environment');
+    },
+  });
+
+  const completeObjectiveMutation = useMutation({
+    mutationFn: async (objectiveIndex: number) => {
+      if (!labSession?.id) throw new Error('No active session');
+      return labsApi.completeObjective(labSession.id, objectiveIndex);
+    },
+    onSuccess: (data, objectiveIndex) => {
+      setCompletedObjectives((prev) => [...prev, objectiveIndex]);
+    },
+    onError: (error: any) => {
+      setLabError(error?.response?.data?.detail || 'Failed to complete objective');
+    },
+  });
+
+  // Lab handlers
+  const handleStartEnvironment = useCallback(async () => {
+    setLabError(null);
+    try {
+      // Start the desktop environment if not already running
+      if (envStatus?.status !== 'running') {
+        await environmentsApi.start('desktop');
+      }
+      // Create lab session for tracking objectives
+      await startLabMutation.mutateAsync();
+      queryClient.invalidateQueries({ queryKey: ['environment-status'] });
+    } catch (error: any) {
+      setLabError(error?.response?.data?.detail || 'Failed to start environment');
+    }
+  }, [envStatus?.status, startLabMutation, queryClient]);
+
+  const handleStopEnvironment = useCallback(() => {
+    stopLabMutation.mutate();
+  }, [stopLabMutation]);
+
+  const handleResetEnvironment = useCallback(() => {
+    // Stop then restart
+    if (labSession) {
+      stopLabMutation.mutate();
+    }
+    setTimeout(() => {
+      startLabMutation.mutate();
+    }, 1000);
+  }, [labSession, stopLabMutation, startLabMutation]);
+
+  const handleObjectiveComplete = useCallback((index: number) => {
+    if (!completedObjectives.includes(index)) {
+      completeObjectiveMutation.mutate(index);
+    }
+  }, [completedObjectives, completeObjectiveMutation]);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -183,6 +321,50 @@ export default function LessonViewer() {
     );
   }
 
+  // Render SplitScreenLabViewer for lab-type lessons
+  if (isLabLesson && lesson.lab) {
+    return (
+      <div className="h-screen">
+        <SplitScreenLabViewer
+          lab={{
+            id: lesson.lab.id,
+            title: lesson.lab.title,
+            description: lesson.lab.description,
+            difficulty: lesson.lab.difficulty,
+            objectives: lesson.lab.objectives || [],
+            instructions: lesson.lab.instructions || '',
+            hints: lesson.lab.hints || [],
+            estimated_time: lesson.lab.estimated_time,
+          }}
+          environment={environment || undefined}
+          completedObjectives={completedObjectives}
+          onObjectiveComplete={handleObjectiveComplete}
+          onStartEnvironment={handleStartEnvironment}
+          onStopEnvironment={handleStopEnvironment}
+          onResetEnvironment={handleResetEnvironment}
+          isStarting={startLabMutation.isPending}
+          isStopping={stopLabMutation.isPending}
+          error={labError || undefined}
+          courseTitle={course?.title}
+          lessonTitle={lesson.title}
+          onPrevious={
+            navigation.prev
+              ? () => router.push(`/courses/${courseId}/lesson/${navigation.prev!.lesson.id}`)
+              : undefined
+          }
+          onNext={
+            navigation.next
+              ? () => router.push(`/courses/${courseId}/lesson/${navigation.next!.lesson.id}`)
+              : undefined
+          }
+          hasPrevious={!!navigation.prev}
+          hasNext={!!navigation.next}
+        />
+      </div>
+    );
+  }
+
+  // Standard lesson view
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
@@ -221,22 +403,34 @@ export default function LessonViewer() {
                   <h3 className="text-sm font-medium text-gray-300">{module.title}</h3>
                 </div>
                 <div className="py-1">
-                  {module.lessons?.map((lessonItem) => (
-                    <button
-                      key={lessonItem.id}
-                      onClick={() =>
-                        router.push(`/courses/${courseId}/lesson/${lessonItem.id}`)
-                      }
-                      className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-cyber-accent/10 transition-colors ${
-                        lessonItem.id === lessonId
-                          ? 'bg-cyber-accent/20 text-cyber-accent border-l-2 border-cyber-accent'
-                          : 'text-gray-400'
-                      }`}
-                    >
-                      <FileText className="w-4 h-4 flex-shrink-0" />
-                      <span className="truncate">{lessonItem.title}</span>
-                    </button>
-                  ))}
+                  {module.lessons?.map((lessonItem) => {
+                    const isLab = lessonItem.lesson_type === 'lab';
+                    return (
+                      <button
+                        key={lessonItem.id}
+                        onClick={() =>
+                          router.push(`/courses/${courseId}/lesson/${lessonItem.id}`)
+                        }
+                        className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-cyber-accent/10 transition-colors ${
+                          lessonItem.id === lessonId
+                            ? 'bg-cyber-accent/20 text-cyber-accent border-l-2 border-cyber-accent'
+                            : 'text-gray-400'
+                        }`}
+                      >
+                        {isLab ? (
+                          <FlaskConical className="w-4 h-4 flex-shrink-0 text-purple-400" />
+                        ) : (
+                          <FileText className="w-4 h-4 flex-shrink-0" />
+                        )}
+                        <span className="truncate">{lessonItem.title}</span>
+                        {isLab && (
+                          <span className="ml-auto text-xs px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">
+                            Lab
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ))}

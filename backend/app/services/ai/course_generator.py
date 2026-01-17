@@ -27,8 +27,9 @@ from app.core.config import settings
 from app.models.course import (
     Course, Module, Lesson, ContentBlock, ExternalResource,
     CourseGenerationJob, GenerationStage, GenerationStatus,
-    ContentBlockType, ResourceType, DifficultyLevel, CourseCategory
+    ContentBlockType, ResourceType, DifficultyLevel, CourseCategory, LessonType
 )
+from app.models.lab import Lab, LabType, LabEnvironmentType
 from app.services.ai.teaching_engine import teaching_engine
 from app.services.ai.diagram_generator import diagram_generator
 from app.services.ai.quiz_generator import quiz_generator
@@ -88,13 +89,28 @@ class CourseGenerationPipeline:
     def __init__(self):
         self.stage_weights = {
             GenerationStage.STRUCTURE: 5,
-            GenerationStage.CONTENT: 60,
-            GenerationStage.CODE_EXAMPLES: 10,
+            GenerationStage.CONTENT: 50,
+            GenerationStage.LABS: 15,
+            GenerationStage.CODE_EXAMPLES: 8,
             GenerationStage.DIAGRAMS: 5,
             GenerationStage.IMAGES: 5,
             GenerationStage.WIKIPEDIA: 5,
-            GenerationStage.QUIZZES: 8,
+            GenerationStage.QUIZZES: 5,
             GenerationStage.REVIEW: 2,
+        }
+
+        # Infrastructure preset mapping based on course category
+        self.category_preset_map = {
+            CourseCategory.PENETRATION_TESTING: "pentest",
+            CourseCategory.WEB_SECURITY: "pentest",
+            CourseCategory.NETWORK_SECURITY: "server",
+            CourseCategory.MALWARE_ANALYSIS: "developer",
+            CourseCategory.CRYPTOGRAPHY: "developer",
+            CourseCategory.FORENSICS: "server",
+            CourseCategory.REVERSE_ENGINEERING: "developer",
+            CourseCategory.CLOUD_SECURITY: "server",
+            CourseCategory.SOC_OPERATIONS: "server",
+            CourseCategory.INCIDENT_RESPONSE: "server",
         }
 
     async def generate_full_course(
@@ -149,7 +165,11 @@ class CourseGenerationPipeline:
             await self._update_job_stage(job, GenerationStage.CONTENT, db)
             await self._generate_all_lesson_content(course, job, options, db, progress_callback)
 
-            # Stage 3: Code Examples
+            # Stage 3: Generate Labs for lab-type lessons
+            await self._update_job_stage(job, GenerationStage.LABS, db)
+            await self._generate_labs_for_lessons(course, job, options, db, progress_callback)
+
+            # Stage 4: Code Examples
             if options.get("include_code_examples", True):
                 await self._update_job_stage(job, GenerationStage.CODE_EXAMPLES, db)
                 await self._add_code_examples(course, job, db, progress_callback)
@@ -231,6 +251,10 @@ Requirements:
 - Focus on practical, hands-on learning
 - Include progressive difficulty within each module
 - Lessons should build upon each other
+- Include 1-2 lessons per module with type "lab" for hands-on practice
+- Use type "lab" for practical exercises, challenges, CTF-style activities
+- Use type "quiz" for assessment lessons at end of modules
+- Use type "text" for theory and conceptual lessons
 
 IMPORTANT: Return ONLY valid JSON, no markdown, no extra text.
 
@@ -250,12 +274,20 @@ Format:
             "estimated_duration": 45,
             "lessons": [
                 {{
-                    "title": "Lesson Title",
+                    "title": "Introduction to Topic",
                     "description": "Brief lesson description",
                     "type": "text",
                     "learning_objectives": ["objective1"],
                     "duration": 15,
                     "points": 10
+                }},
+                {{
+                    "title": "Hands-On Lab: Practical Exercise",
+                    "description": "Practice the concepts learned",
+                    "type": "lab",
+                    "learning_objectives": ["Apply concepts practically"],
+                    "duration": 30,
+                    "points": 25
                 }}
             ]
         }}
@@ -313,10 +345,16 @@ Format:
                 raw_type = lesson_data.get("type", "text")
                 normalized_type = normalize_lesson_type(raw_type)
 
+                # Convert string to LessonType enum
+                try:
+                    lesson_type_enum = LessonType(normalized_type)
+                except ValueError:
+                    lesson_type_enum = LessonType.TEXT
+
                 lesson = Lesson(
                     module_id=module.id,
                     title=lesson_data["title"],
-                    lesson_type=normalized_type,
+                    lesson_type=lesson_type_enum,
                     order=lesson_order,
                     learning_objectives=lesson_data.get("learning_objectives", []),
                     duration=lesson_data.get("duration", 15),
@@ -786,6 +824,264 @@ Only include practical, educational examples. Focus on cybersecurity tools and t
         if progress_callback:
             await progress_callback(job.id, "quizzes", 100, "Quizzes generated")
 
+    async def _generate_labs_for_lessons(
+        self,
+        course: Course,
+        job: CourseGenerationJob,
+        options: Dict[str, Any],
+        db: AsyncSession,
+        progress_callback: Optional[callable] = None,
+    ):
+        """Generate Lab entities for lessons with lesson_type='lab'."""
+        if progress_callback:
+            await progress_callback(job.id, "labs", 0, "Generating labs for lab lessons...")
+
+        # Reload course with modules and lessons
+        stmt = (
+            select(Course)
+            .options(
+                selectinload(Course.modules).selectinload(Module.lessons)
+            )
+            .where(Course.id == course.id)
+        )
+        result = await db.execute(stmt)
+        course = result.scalar_one()
+
+        # Find all lab-type lessons
+        lab_lessons = []
+        for module in course.modules:
+            for lesson in module.lessons:
+                if lesson.lesson_type == LessonType.LAB:
+                    lab_lessons.append((module, lesson))
+
+        if not lab_lessons:
+            if progress_callback:
+                await progress_callback(job.id, "labs", 100, "No lab lessons found")
+            return
+
+        total_labs = len(lab_lessons)
+        completed = 0
+
+        for module, lesson in lab_lessons:
+            if progress_callback:
+                progress = int((completed / total_labs) * 100)
+                await progress_callback(
+                    job.id,
+                    "labs",
+                    progress,
+                    f"Creating lab: {lesson.title}"
+                )
+
+            try:
+                # Generate lab content using AI
+                lab_content = await self._generate_lab_content(lesson, module, course)
+
+                # Generate unique slug for lab
+                import re
+                base_slug = re.sub(r'[^\w\s-]', '', lesson.title.lower())
+                base_slug = re.sub(r'[\s_-]+', '-', base_slug).strip('-')
+                lab_slug = f"lab-{base_slug}"
+
+                # Check for unique slug
+                counter = 1
+                check_slug = lab_slug
+                while True:
+                    existing = await db.execute(
+                        select(Lab).where(Lab.slug == check_slug)
+                    )
+                    if not existing.scalar_one_or_none():
+                        lab_slug = check_slug
+                        break
+                    check_slug = f"{lab_slug}-{counter}"
+                    counter += 1
+
+                # Create Lab entity - no infrastructure spec, uses user's desktop environment
+                lab = Lab(
+                    title=f"Lab: {lesson.title}",
+                    slug=lab_slug,
+                    description=lab_content.get("description", f"Hands-on lab for {lesson.title}"),
+                    lab_type=LabType.TUTORIAL if course.difficulty == DifficultyLevel.BEGINNER else LabType.CHALLENGE,
+                    environment_type=None,  # Use user's existing desktop environment
+                    difficulty=course.difficulty.value if course.difficulty else "beginner",
+                    estimated_time=lab_content.get("estimated_time", 30),
+                    points=lesson.points * 2,  # Labs worth more points
+                    preset=None,  # No preset - uses user's desktop
+                    infrastructure_spec={},  # Empty - uses user's desktop environment
+                    flags=lab_content.get("flags", []),
+                    objectives=lab_content.get("objectives", []),
+                    instructions=lab_content.get("instructions", ""),
+                    hints=lab_content.get("hints", []),
+                    category=course.category.value if course.category else None,
+                    tags=[course.category.value] if course.category else [],
+                    is_published=True,
+                    is_ai_generated=True,
+                    created_by=course.created_by,
+                )
+
+                db.add(lab)
+                await db.flush()
+
+                # Link lab to lesson
+                lesson.lab_id = lab.id
+
+                logger.info(
+                    "Created lab for lesson",
+                    lab_id=str(lab.id),
+                    lesson_id=str(lesson.id),
+                    lesson_title=lesson.title,
+                )
+
+            except Exception as e:
+                logger.error(
+                    "Failed to generate lab for lesson",
+                    error=str(e),
+                    lesson_id=str(lesson.id),
+                    lesson_title=lesson.title,
+                )
+                # Continue with next lesson rather than failing entire stage
+
+            completed += 1
+
+        await db.commit()
+
+        if progress_callback:
+            await progress_callback(job.id, "labs", 100, f"Generated {completed} labs")
+
+    async def _generate_lab_content(
+        self,
+        lesson: Lesson,
+        module: Module,
+        course: Course,
+    ) -> Dict[str, Any]:
+        """Generate lab content including objectives, instructions, and hints using AI."""
+        prompt = f"""Create a hands-on cybersecurity lab for the lesson "{lesson.title}" from the module "{module.title}" in the course "{course.title}".
+
+Course Difficulty: {course.difficulty.value if course.difficulty else 'beginner'}
+Category: {course.category.value if course.category else 'web_security'}
+
+Lesson Context:
+{(lesson.content or "")[:1000]}
+
+Generate a practical lab with:
+1. A brief description (2-3 sentences)
+2. 3-5 specific, measurable objectives (tasks students must complete)
+3. Step-by-step instructions in Markdown format (include commands where relevant)
+4. 2-3 helpful hints (progressively more revealing)
+5. Optional: CTF-style flags if appropriate
+
+IMPORTANT: Return ONLY valid JSON, no markdown, no extra text.
+
+Format:
+{{
+    "description": "Lab description here",
+    "objectives": [
+        "Objective 1 - specific task",
+        "Objective 2 - specific task",
+        "Objective 3 - specific task"
+    ],
+    "instructions": "## Getting Started\\n\\nStep-by-step markdown instructions...\\n\\n### Step 1: ...\\n\\n```bash\\ncommand here\\n```\\n\\n### Step 2: ...",
+    "hints": [
+        "First hint - gentle nudge",
+        "Second hint - more specific",
+        "Third hint - almost the answer"
+    ],
+    "flags": [
+        {{"name": "flag1", "value": "FLAG{{example_flag}}", "points": 25, "hint": "Look in the config files"}}
+    ],
+    "estimated_time": 30
+}}"""
+
+        messages = [{"role": "user", "content": prompt}]
+
+        try:
+            response = await teaching_engine.generate_response(
+                messages,
+                teaching_mode="challenge",
+                skill_level=course.difficulty.value if course.difficulty else "beginner",
+                temperature=0.7,
+                max_tokens=3000,
+            )
+
+            json_str = teaching_engine._clean_json_response(response)
+            return json.loads(json_str)
+
+        except json.JSONDecodeError as e:
+            logger.warning("Failed to parse lab content JSON", error=str(e))
+            # Return default lab content
+            return {
+                "description": f"Hands-on lab for {lesson.title}",
+                "objectives": [
+                    f"Complete the {lesson.title} exercises",
+                    "Apply concepts learned in this lesson",
+                    "Document your findings"
+                ],
+                "instructions": f"## Lab: {lesson.title}\n\nFollow the lesson content and complete the practical exercises.\n\n### Objectives\n\nWork through each objective systematically.",
+                "hints": [
+                    "Review the lesson content carefully",
+                    "Check the documentation for relevant commands",
+                    "Try different approaches if stuck"
+                ],
+                "flags": [],
+                "estimated_time": 30,
+            }
+
+    def _get_lab_preset(self, category: CourseCategory) -> str:
+        """Get infrastructure preset based on course category."""
+        return self.category_preset_map.get(category, "server")
+
+    def _build_infrastructure_spec(self, preset: str, lab_title: str) -> Dict[str, Any]:
+        """Build infrastructure specification for the lab."""
+        # Base specs for different presets
+        preset_specs = {
+            "pentest": {
+                "containers": [
+                    {
+                        "name": "attacker",
+                        "image": "alphha/kali-light:latest",
+                        "ports": ["22:22"],
+                        "tools": ["nmap", "metasploit", "burpsuite"],
+                    },
+                    {
+                        "name": "target",
+                        "image": "alphha/vulnerable-web:latest",
+                        "ports": ["80:80", "443:443"],
+                    }
+                ],
+                "networks": ["lab_network"],
+                "env_type": "terminal",
+            },
+            "server": {
+                "containers": [
+                    {
+                        "name": "workstation",
+                        "image": "alphha/ubuntu-server:latest",
+                        "ports": ["22:22"],
+                        "tools": ["vim", "curl", "netcat", "tcpdump"],
+                    }
+                ],
+                "networks": ["lab_network"],
+                "env_type": "terminal",
+            },
+            "developer": {
+                "containers": [
+                    {
+                        "name": "dev-env",
+                        "image": "alphha/dev-workstation:latest",
+                        "ports": ["22:22", "8080:8080"],
+                        "tools": ["python3", "gcc", "gdb", "radare2"],
+                    }
+                ],
+                "networks": ["lab_network"],
+                "env_type": "terminal",
+            },
+        }
+
+        spec = preset_specs.get(preset, preset_specs["server"])
+        spec["preset"] = preset
+        spec["lab_title"] = lab_title
+
+        return spec
+
     async def _final_review(
         self,
         course: Course,
@@ -841,6 +1137,7 @@ Only include practical, educational examples. Focus on cybersecurity tools and t
         stage_order = [
             GenerationStage.STRUCTURE,
             GenerationStage.CONTENT,
+            GenerationStage.LABS,
             GenerationStage.CODE_EXAMPLES,
             GenerationStage.DIAGRAMS,
             GenerationStage.IMAGES,
@@ -864,6 +1161,102 @@ Only include practical, educational examples. Focus on cybersecurity tools and t
             stage_progress = 0
 
         return int(((completed_weight + stage_progress) / total_weight) * 100)
+
+    async def generate_labs_for_existing_course(
+        self,
+        course: Course,
+        lab_lessons: List[tuple],  # List of (Module, Lesson) tuples
+        db: AsyncSession,
+    ) -> int:
+        """
+        Generate labs for specific lessons in an existing course.
+
+        This method is used to generate labs after a course has already been created,
+        allowing users to add labs to courses that were created without them.
+
+        Args:
+            course: The Course entity
+            lab_lessons: List of (module, lesson) tuples to generate labs for
+            db: Database session
+
+        Returns:
+            Number of labs created
+        """
+        labs_created = 0
+
+        for module, lesson in lab_lessons:
+            try:
+                # Generate lab content using AI
+                lab_content = await self._generate_lab_content(lesson, module, course)
+
+                # Generate unique slug for lab
+                base_slug = re.sub(r'[^\w\s-]', '', lesson.title.lower())
+                base_slug = re.sub(r'[\s_-]+', '-', base_slug).strip('-')
+                lab_slug = f"lab-{base_slug}"
+
+                # Check for unique slug
+                counter = 1
+                check_slug = lab_slug
+                while True:
+                    existing = await db.execute(
+                        select(Lab).where(Lab.slug == check_slug)
+                    )
+                    if not existing.scalar_one_or_none():
+                        lab_slug = check_slug
+                        break
+                    check_slug = f"{lab_slug}-{counter}"
+                    counter += 1
+
+                # Create Lab entity - uses user's desktop environment
+                lab = Lab(
+                    title=f"Lab: {lesson.title}",
+                    slug=lab_slug,
+                    description=lab_content.get("description", f"Hands-on lab for {lesson.title}"),
+                    lab_type=LabType.TUTORIAL if course.difficulty == DifficultyLevel.BEGINNER else LabType.CHALLENGE,
+                    environment_type=None,  # Use user's existing desktop environment
+                    difficulty=course.difficulty.value if course.difficulty else "beginner",
+                    estimated_time=lab_content.get("estimated_time", 30),
+                    points=lesson.points * 2 if lesson.points else 20,  # Labs worth more points
+                    preset=None,  # No preset - uses user's desktop
+                    infrastructure_spec={},  # Empty - uses user's desktop environment
+                    flags=lab_content.get("flags", []),
+                    objectives=lab_content.get("objectives", []),
+                    instructions=lab_content.get("instructions", ""),
+                    hints=lab_content.get("hints", []),
+                    category=course.category.value if course.category else None,
+                    tags=[course.category.value] if course.category else [],
+                    is_published=True,
+                    is_ai_generated=True,
+                    created_by=course.created_by,
+                )
+
+                db.add(lab)
+                await db.flush()
+
+                # Link lab to lesson
+                lesson.lab_id = lab.id
+                labs_created += 1
+
+                logger.info(
+                    "Created lab for existing course lesson",
+                    lab_id=str(lab.id),
+                    lesson_id=str(lesson.id),
+                    lesson_title=lesson.title,
+                    course_id=str(course.id),
+                )
+
+            except Exception as e:
+                logger.error(
+                    "Failed to generate lab for lesson",
+                    error=str(e),
+                    lesson_id=str(lesson.id),
+                    lesson_title=lesson.title,
+                )
+                # Continue with next lesson rather than failing entirely
+                continue
+
+        await db.commit()
+        return labs_created
 
 
 # Singleton instance

@@ -73,6 +73,7 @@ Requirements:
 3. Include relevant connections and relationships
 4. Keep it focused and not overly complex
 5. Use appropriate styling if needed
+6. Do NOT use HTML tags like <br> or &nbsp;. Use simple text labels only.
 
 Return ONLY the Mermaid code, no markdown code blocks, no explanations.
 
@@ -234,6 +235,12 @@ Generate the diagram now:"""
             # Skip empty lines at start
             if not fixed_lines and not line.strip():
                 continue
+
+            # Remove HTML br tags (common AI mistake)
+            line = re.sub(r'<br\s*/?>', ' ', line)
+
+            # Remove other HTML tags that might cause issues
+            line = re.sub(r'&nbsp;', ' ', line)
 
             # Fix arrows with spaces
             line = re.sub(r'\s*-->\s*', ' --> ', line)

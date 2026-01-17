@@ -165,17 +165,29 @@ class ResourceLimitEnforcer:
         db: AsyncSession,
     ) -> tuple[bool, str]:
         """
-        Check if user can generate an AI course this month.
+        Check if user can generate an AI course.
+
+        The limit is based on the actual number of AI-generated courses the user
+        currently has, not cumulative usage. Deleting a course frees up a slot.
 
         Returns: (can_generate, reason)
         """
+        from app.models.course import Course
+
         limits = await self.get_effective_limits(user_id, db)
-        tracking = await self.get_usage_tracking(user_id, db)
+        max_ai_courses = limits.get("max_ai_generated_courses", 10)
 
-        max_ai_courses = limits.get("max_ai_generated_courses", 3)
+        # Count actual AI-generated courses the user currently has
+        result = await db.execute(
+            select(Course).where(
+                Course.created_by == user_id,
+                Course.is_ai_generated == True
+            )
+        )
+        current_ai_courses = len(result.scalars().all())
 
-        if tracking.ai_courses_this_month >= max_ai_courses:
-            return False, f"You have reached the monthly limit of {max_ai_courses} AI-generated courses"
+        if current_ai_courses >= max_ai_courses:
+            return False, f"You have reached the limit of {max_ai_courses} AI-generated courses. Delete an existing course to create a new one."
 
         return True, "OK"
 
@@ -292,15 +304,26 @@ class ResourceLimitEnforcer:
         db: AsyncSession,
     ) -> Dict[str, Any]:
         """Get a summary of user's limits and usage."""
+        from app.models.course import Course
+
         limits = await self.get_effective_limits(user_id, db)
         tracking = await self.get_usage_tracking(user_id, db)
 
-        max_courses = limits.get("max_courses_per_user", 5)
-        max_ai_courses = limits.get("max_ai_generated_courses", 3)
+        max_courses = limits.get("max_courses_per_user", 50)
+        max_ai_courses = limits.get("max_ai_generated_courses", 10)
         max_concurrent_labs = limits.get("max_concurrent_labs", 1)
         max_terminal_hours = limits.get("max_terminal_hours_monthly", 30)
         max_desktop_hours = limits.get("max_desktop_hours_monthly", 10)
         max_storage_gb = limits.get("max_storage_gb", 2)
+
+        # Count actual AI-generated courses (not cumulative usage)
+        result = await db.execute(
+            select(Course).where(
+                Course.created_by == user_id,
+                Course.is_ai_generated == True
+            )
+        )
+        current_ai_courses = len(result.scalars().all())
 
         return {
             "limits": {
@@ -316,7 +339,7 @@ class ResourceLimitEnforcer:
             },
             "usage": {
                 "courses_created_total": tracking.courses_created_total,
-                "ai_courses_this_month": tracking.ai_courses_this_month,
+                "ai_courses_this_month": current_ai_courses,  # Now shows actual count
                 "active_lab_sessions": tracking.active_lab_sessions,
                 "terminal_minutes_this_month": tracking.terminal_minutes_this_month,
                 "desktop_minutes_this_month": tracking.desktop_minutes_this_month,
@@ -324,7 +347,7 @@ class ResourceLimitEnforcer:
             },
             "remaining": {
                 "courses_remaining": max(0, max_courses - tracking.courses_created_total),
-                "ai_courses_remaining_this_month": max(0, max_ai_courses - tracking.ai_courses_this_month),
+                "ai_courses_remaining_this_month": max(0, max_ai_courses - current_ai_courses),
                 "can_start_lab": tracking.active_lab_sessions < max_concurrent_labs,
                 "terminal_hours_remaining": max(0, max_terminal_hours - (tracking.terminal_minutes_this_month / 60)),
                 "desktop_hours_remaining": max(0, max_desktop_hours - (tracking.desktop_minutes_this_month / 60)),

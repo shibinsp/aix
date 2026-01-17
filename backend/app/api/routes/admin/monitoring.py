@@ -10,7 +10,7 @@ from sqlalchemy.orm import joinedload
 from app.core.database import get_db
 from app.core.dependencies import get_current_admin
 from app.models.user import User
-from app.models.lab import Lab, LabSession
+from app.models.lab import Lab, LabSession, LabStatus
 from app.models.audit import AuditAction
 from app.schemas.admin import ActiveLabSession, SystemResources
 from app.services.audit.audit_service import AuditService
@@ -72,7 +72,7 @@ async def get_active_lab_sessions(
     result = await db.execute(
         select(LabSession)
         .options(joinedload(LabSession.user), joinedload(LabSession.lab))
-        .where(LabSession.status == "active")
+        .where(LabSession.status == LabStatus.RUNNING)
         .order_by(LabSession.started_at.desc())
     )
     sessions = result.scalars().all()
@@ -108,7 +108,7 @@ async def force_stop_lab_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    if session.status != "active":
+    if session.status != LabStatus.RUNNING:
         raise HTTPException(status_code=400, detail="Session is not active")
 
     # Stop the containers if exist
@@ -163,9 +163,9 @@ async def get_lab_session_counts(
     counts = {status: count for status, count in result.all()}
 
     return {
-        "active": counts.get("active", 0),
-        "completed": counts.get("completed", 0),
-        "failed": counts.get("failed", 0),
-        "terminated": counts.get("terminated", 0),
+        "running": counts.get(LabStatus.RUNNING, 0),
+        "completed": counts.get(LabStatus.COMPLETED, 0),
+        "failed": counts.get(LabStatus.FAILED, 0),
+        "terminated": counts.get(LabStatus.TERMINATED, 0),
         "total": sum(counts.values()),
     }

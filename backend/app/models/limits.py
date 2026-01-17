@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 
 # Default system limits
 DEFAULT_LIMITS = {
-    "max_courses_per_user": 5,           # Lifetime total
-    "max_ai_generated_courses": 3,       # Per month
+    "max_courses_per_user": 50,          # Lifetime total
+    "max_ai_generated_courses": 10,      # Per month
     "max_concurrent_labs": 1,            # Active sessions
     "max_lab_duration_minutes": 60,      # Auto-terminate
     "max_terminal_hours_monthly": 30,    # Persistent terminal

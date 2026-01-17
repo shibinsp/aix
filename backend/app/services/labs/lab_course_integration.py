@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 
 from app.models.course import Course, Lesson
-from app.models.lab import Lab, LabSession
+from app.models.lab import Lab, LabSession, LabStatus
 from app.models.environment import PersistentEnvironment, EnvironmentType, EnvironmentStatus, EnvironmentSession
 from app.models.user import User
 from app.services.environments import persistent_env_manager
@@ -217,7 +217,7 @@ class LabCourseIntegrationService:
             select(LabSession).where(
                 LabSession.user_id == user_id,
                 LabSession.lab_id == lab_id,
-                LabSession.status == "active"
+                LabSession.status == LabStatus.RUNNING
             )
         )
         existing = result.scalar_one_or_none()
@@ -237,7 +237,7 @@ class LabCourseIntegrationService:
             lab_id=lab_id,
             course_id=course_id,
             lesson_id=lesson_id,
-            status="active",
+            status=LabStatus.RUNNING,
             started_at=datetime.utcnow(),
         )
         db.add(session)
@@ -315,8 +315,8 @@ class LabCourseIntegrationService:
         total_objectives = len(lab.objectives or [])
         all_completed = len(completed) >= total_objectives
 
-        if all_completed and session.status != "completed":
-            session.status = "completed"
+        if all_completed and session.status != LabStatus.COMPLETED:
+            session.status = LabStatus.COMPLETED
             session.completed_at = datetime.utcnow()
             await db.commit()
 
@@ -382,8 +382,8 @@ class LabCourseIntegrationService:
         if str(session.user_id) != user_id:
             raise ValueError("Unauthorized")
 
-        if session.status == "active":
-            session.status = "ended"
+        if session.status == LabStatus.RUNNING:
+            session.status = LabStatus.TERMINATED
             session.ended_at = datetime.utcnow()
 
             # Calculate duration

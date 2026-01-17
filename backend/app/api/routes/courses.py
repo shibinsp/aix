@@ -535,18 +535,19 @@ async def get_full_lesson(
     lesson_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a lesson with all content blocks and external resources."""
+    """Get a lesson with all content blocks, external resources, and lab data."""
     # Verify course exists
     course = await db.get(Course, course_id)
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    # Get lesson with relationships
+    # Get lesson with relationships including lab
     stmt = (
         select(Lesson)
         .options(
             selectinload(Lesson.content_blocks),
             selectinload(Lesson.external_resources),
+            selectinload(Lesson.lab),
         )
         .where(Lesson.id == lesson_id)
     )
@@ -1105,6 +1106,70 @@ Return JSON format:
     except Exception as e:
         logger.error("Failed to generate learning content", error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to generate content: {str(e)}")
+
+
+# ============================================================================
+# GENERATE LABS FOR EXISTING COURSES
+# ============================================================================
+
+@router.post("/{course_id}/generate-labs")
+async def generate_labs_for_course(
+    course_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate labs for all lab-type lessons in an existing course.
+
+    This endpoint allows users to trigger lab generation for courses
+    that were created without labs or need labs regenerated.
+    """
+    # Get course with modules and lessons
+    stmt = (
+        select(Course)
+        .options(selectinload(Course.modules).selectinload(Module.lessons))
+        .where(Course.id == course_id, Course.created_by == user_id)
+    )
+    result = await db.execute(stmt)
+    course = result.scalar_one_or_none()
+
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    # Find lab-type lessons without labs, or all lessons if no lab-type lessons exist
+    lab_lessons = []
+    all_lessons = []
+
+    for module in course.modules:
+        for lesson in module.lessons:
+            all_lessons.append((module, lesson))
+            # Check for lab-type lessons without assigned labs
+            if lesson.lesson_type == "lab" and not lesson.lab_id:
+                lab_lessons.append((module, lesson))
+
+    # If no lab-type lessons found, create labs for all lessons
+    if not lab_lessons:
+        lab_lessons = [(m, l) for m, l in all_lessons if not l.lab_id]
+
+    if not lab_lessons:
+        return {"message": "All lessons already have labs", "labs_created": 0}
+
+    logger.info(f"Generating labs for {len(lab_lessons)} lessons in course {course_id}")
+
+    # Generate labs using the course generator
+    try:
+        labs_created = await course_generator.generate_labs_for_existing_course(
+            course, lab_lessons, db
+        )
+
+        return {
+            "message": f"Successfully generated {labs_created} labs",
+            "labs_created": labs_created,
+            "course_id": str(course_id)
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate labs for course {course_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate labs: {str(e)}")
 
 
 # ============================================================================

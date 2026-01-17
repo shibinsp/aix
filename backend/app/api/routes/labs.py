@@ -52,8 +52,8 @@ async def list_labs(
     skip: int = 0,
     limit: int = 20,
 ):
-    """List labs created by the current user."""
-    query = select(Lab).where(Lab.created_by == user_id)
+    """List all published labs."""
+    query = select(Lab).where(Lab.is_published == True)
 
     if lab_type:
         query = query.where(Lab.lab_type == lab_type)
@@ -191,7 +191,13 @@ async def start_lab_session(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Start a new lab session."""
+    """
+    Start a new lab session using the user's persistent desktop environment.
+
+    Labs no longer create ephemeral containers - they use the user's existing
+    desktop environment from "My Environment". This provides a consistent
+    workspace where users can work on multiple labs without losing their setup.
+    """
     # Check if user can start a new lab session
     can_start, reason = await limit_enforcer.check_can_start_lab(UUID(user_id), db)
     if not can_start:
@@ -204,7 +210,7 @@ async def start_lab_session(
     if not lab:
         raise HTTPException(status_code=404, detail="Lab not found")
 
-    # Check for existing active session
+    # Check for existing active session for this lab
     existing = await db.execute(
         select(LabSession).where(
             LabSession.user_id == user_id,
@@ -217,48 +223,38 @@ async def start_lab_session(
     if existing_session:
         return LabSessionResponse.model_validate(existing_session)
 
-    # Create session record
+    # Start user's persistent desktop environment (not creating new containers)
+    from app.services.environments import persistent_env_manager
+
+    try:
+        connection_info = await persistent_env_manager.start_environment(
+            str(user_id), "desktop", db
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start desktop environment: {str(e)}"
+        )
+
+    # Create session record for tracking lab progress
     session = LabSession(
         user_id=user_id,
         lab_id=lab_id,
-        status=LabStatus.PROVISIONING,
+        status=LabStatus.RUNNING,
+        preset="desktop",  # Mark as using desktop environment
         started_at=datetime.utcnow(),
         expires_at=datetime.utcnow() + timedelta(minutes=settings.LAB_TIMEOUT_MINUTES),
+        access_url=connection_info.get("access_url"),
+        container_ids=[],  # No dedicated lab containers
+        network_id=None,
     )
 
     db.add(session)
     await db.commit()
     await db.refresh(session)
 
-    # Start lab infrastructure
-    lab_result = await lab_manager.start_lab_session(
-        session_id=str(session.id),
-        user_id=user_id,
-        infrastructure_spec=lab.infrastructure_spec,
-    )
-
-    # Update session with results
-    if lab_result["status"] == "running":
-        session.status = LabStatus.RUNNING
-        session.container_ids = [c["id"] for c in lab_result.get("containers", [])]
-        session.network_id = lab_result.get("network")
-        # Generate proper access URL from infrastructure spec
-        access_urls = []
-        for container in lab.infrastructure_spec.get("containers", []):
-            ports = container.get("ports", [])
-            for port in ports:
-                # Parse port mapping like "80:80" or "8080:80"
-                if ":" in port:
-                    host_port = port.split(":")[0]
-                    access_urls.append(f"http://{settings.SERVER_HOST}:{host_port}")
-        session.access_url = access_urls[0] if access_urls else None
-        # Record lab started for limit tracking
-        await limit_enforcer.record_lab_started(UUID(user_id), db)
-    else:
-        session.status = LabStatus.FAILED
-
-    await db.commit()
-    await db.refresh(session)
+    # Record lab started for limit tracking
+    await limit_enforcer.record_lab_started(UUID(user_id), db)
 
     return LabSessionResponse.model_validate(session)
 
@@ -353,7 +349,12 @@ async def stop_lab_session(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Stop a lab session."""
+    """
+    Stop a lab session.
+
+    This marks the lab session as ended but does NOT stop the user's
+    desktop environment - they can continue using it for other labs or work.
+    """
     result = await db.execute(
         select(LabSession).where(
             LabSession.id == session_id,
@@ -365,8 +366,9 @@ async def stop_lab_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Stop infrastructure
-    await lab_manager.stop_lab_session(str(session_id))
+    # Note: We do NOT stop the desktop environment here.
+    # The user's persistent desktop continues running so they can
+    # work on other labs or continue their work.
 
     # Update session status
     session.status = LabStatus.TERMINATED

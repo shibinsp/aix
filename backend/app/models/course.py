@@ -68,6 +68,7 @@ class GenerationStage(str, enum.Enum):
     QUEUED = "QUEUED"
     STRUCTURE = "STRUCTURE"
     CONTENT = "CONTENT"
+    LABS = "LABS"
     CODE_EXAMPLES = "CODE_EXAMPLES"
     DIAGRAMS = "DIAGRAMS"
     IMAGES = "IMAGES"

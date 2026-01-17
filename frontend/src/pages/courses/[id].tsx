@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen,
   Clock,
@@ -19,6 +19,7 @@ import {
   Video,
   Code,
   HelpCircle,
+  FlaskConical,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { coursesApi } from '@/services/api';
@@ -66,11 +67,24 @@ export default function CourseDetail() {
   const { id } = router.query;
   const { isAuthenticated, hasHydrated } = useAuthStore();
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
+  const queryClient = useQueryClient();
 
   const { data: course, isLoading, error } = useQuery({
     queryKey: ['course', id],
     queryFn: () => coursesApi.get(id as string),
     enabled: !!id && isAuthenticated,
+  });
+
+  // Mutation for generating labs
+  const generateLabsMutation = useMutation({
+    mutationFn: () => coursesApi.generateLabs(id as string),
+    onSuccess: (data) => {
+      alert(`Successfully generated ${data.labs_created} labs! Go to the Labs tab to see them.`);
+      queryClient.invalidateQueries({ queryKey: ['course', id] });
+    },
+    onError: (err: any) => {
+      alert(`Failed to generate labs: ${err.response?.data?.detail || err.message}`);
+    },
   });
 
   useEffect(() => {
@@ -227,20 +241,41 @@ export default function CourseDetail() {
                   </div>
                 </div>
 
-                {/* Start Learning Button */}
-                {course.modules?.[0]?.lessons?.[0] && (
+                {/* Action Buttons */}
+                <div className="flex flex-wrap gap-3">
+                  {course.modules?.[0]?.lessons?.[0] && (
+                    <button
+                      onClick={() =>
+                        router.push(
+                          `/courses/${course.id}/lesson/${course.modules[0].lessons[0].id}`
+                        )
+                      }
+                      className="px-6 py-3 bg-cyber-accent text-black font-semibold rounded-lg hover:bg-cyber-accent/80 transition-colors flex items-center gap-2"
+                    >
+                      <Play className="w-5 h-5" />
+                      Start Learning
+                    </button>
+                  )}
+
+                  {/* Generate Labs Button */}
                   <button
-                    onClick={() =>
-                      router.push(
-                        `/courses/${course.id}/lesson/${course.modules[0].lessons[0].id}`
-                      )
-                    }
-                    className="px-6 py-3 bg-cyber-accent text-black font-semibold rounded-lg hover:bg-cyber-accent/80 transition-colors flex items-center gap-2"
+                    onClick={() => generateLabsMutation.mutate()}
+                    disabled={generateLabsMutation.isPending}
+                    className="px-6 py-3 bg-purple-500/20 text-purple-400 border border-purple-500/30 font-semibold rounded-lg hover:bg-purple-500/30 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Play className="w-5 h-5" />
-                    Start Learning
+                    {generateLabsMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Generating Labs...
+                      </>
+                    ) : (
+                      <>
+                        <FlaskConical className="w-5 h-5" />
+                        Generate Labs
+                      </>
+                    )}
                   </button>
-                )}
+                </div>
               </div>
 
               {/* What You'll Learn Card */}

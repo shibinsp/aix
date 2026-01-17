@@ -156,6 +156,10 @@ export const coursesApi = {
     const response = await api.delete(`/courses/${courseId}`);
     return response.data;
   },
+  generateLabs: async (courseId: string) => {
+    const response = await api.post(`/courses/${courseId}/generate-labs`);
+    return response.data;
+  },
 };
 
 // External Content API
@@ -632,7 +636,7 @@ export const environmentsApi = {
     return response.data;
   },
   reset: async (type: 'terminal' | 'desktop') => {
-    const response = await api.post(`/environments/my/${type}/reset`);
+    const response = await api.post(`/environments/my/${type}/reset`, { confirm: true });
     return response.data;
   },
 };

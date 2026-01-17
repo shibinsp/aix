@@ -33,7 +33,9 @@ import {
   FileSearch,
   AlertCircle,
   Search,
-  Filter
+  Filter,
+  Minimize2,
+  Maximize2
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { coursesApi } from '@/services/api';
@@ -509,6 +511,7 @@ export default function LearningPath() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   const [generationOptions, setGenerationOptions] = useState<GenerationOptions>({
     includeCodeExamples: true,
     includeDiagrams: true,
@@ -568,6 +571,7 @@ export default function LearningPath() {
       QUEUED: 'Preparing generation...',
       STRUCTURE: 'Creating course structure...',
       CONTENT: 'Generating lesson content...',
+      LABS: 'Generating labs...',
       CODE_EXAMPLES: 'Adding code examples...',
       DIAGRAMS: 'Creating diagrams...',
       IMAGES: 'Finding images...',
@@ -701,88 +705,136 @@ export default function LearningPath() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      {/* Generating Overlay with Progress */}
+      {/* Generating Overlay with Progress - Minimizable */}
       {courseGeneration.isGenerating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="bg-cyber-dark rounded-2xl border border-cyber-accent/30 p-8 max-w-lg text-center">
-            <div className="relative w-20 h-20 mx-auto mb-6">
-              <svg className="w-20 h-20 -rotate-90">
-                <circle
-                  cx="40"
-                  cy="40"
-                  r="36"
-                  fill="none"
-                  stroke="rgba(0, 255, 159, 0.2)"
-                  strokeWidth="8"
-                />
-                <circle
-                  cx="40"
-                  cy="40"
-                  r="36"
-                  fill="none"
-                  stroke="#00ff9f"
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                  strokeDasharray={`${(courseGeneration.progress?.percent || 0) * 2.26} 226`}
-                  className="transition-all duration-500"
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-lg font-bold text-cyber-accent">
-                  {courseGeneration.progress?.percent || 0}%
-                </span>
+        isMinimized ? (
+          // Minimized floating indicator (bottom-right corner)
+          <div className="fixed bottom-4 right-4 z-50">
+            <button
+              onClick={() => setIsMinimized(false)}
+              className="bg-cyber-dark border border-cyber-accent/30 rounded-xl p-4 shadow-lg hover:border-cyber-accent/50 transition-all group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 relative">
+                  {/* Mini circular progress */}
+                  <svg className="w-12 h-12 -rotate-90">
+                    <circle cx="24" cy="24" r="20" fill="none" stroke="rgba(0,255,159,0.2)" strokeWidth="4"/>
+                    <circle
+                      cx="24" cy="24" r="20" fill="none" stroke="#00ff9f" strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeDasharray={`${(courseGeneration.progress?.percent || 0) * 1.26} 126`}
+                      className="transition-all duration-500"
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-cyber-accent">
+                    {Math.round(courseGeneration.progress?.percent || 0)}%
+                  </span>
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-medium text-white">Generating Course</p>
+                  <p className="text-xs text-gray-400 truncate max-w-[150px]">
+                    {courseGeneration.progress?.message || 'Processing...'}
+                  </p>
+                </div>
+                <Maximize2 className="w-4 h-4 text-gray-400 group-hover:text-cyber-accent transition-colors ml-2" />
               </div>
-            </div>
-
-            <h3 className="text-xl font-bold text-white mb-2">Generating Your Course</h3>
-            <p className="text-gray-400 mb-4">
-              Creating <span className="text-cyber-accent font-medium">"{courseGeneration.topic}"</span>
-            </p>
-
-            {/* Stage Progress */}
-            <div className="bg-cyber-darker rounded-xl p-4 mb-4">
-              <p className="text-cyber-accent font-medium mb-2">
-                {courseGeneration.progress?.message || 'Starting...'}
-              </p>
-              {courseGeneration.progress?.currentLesson && (
-                <p className="text-sm text-gray-500">
-                  Current: {courseGeneration.progress.currentLesson}
-                </p>
-              )}
-            </div>
-
-            {/* Stage Indicators */}
-            <div className="flex flex-wrap gap-2 justify-center">
-              {['STRUCTURE', 'CONTENT', 'CODE_EXAMPLES', 'DIAGRAMS', 'WIKIPEDIA', 'QUIZZES'].map((stage) => {
-                const currentStage = courseGeneration.progress?.stage || '';
-                const stageOrder = ['QUEUED', 'STRUCTURE', 'CONTENT', 'CODE_EXAMPLES', 'DIAGRAMS', 'IMAGES', 'WIKIPEDIA', 'QUIZZES', 'REVIEW', 'COMPLETED'];
-                const currentIdx = stageOrder.indexOf(currentStage);
-                const stageIdx = stageOrder.indexOf(stage);
-                const isCompleted = currentIdx > stageIdx;
-                const isCurrent = currentStage === stage;
-
-                return (
-                  <div
-                    key={stage}
-                    className={`px-2 py-1 rounded text-xs ${
-                      isCompleted
-                        ? 'bg-green-500/20 text-green-400'
-                        : isCurrent
-                        ? 'bg-cyber-accent/20 text-cyber-accent animate-pulse'
-                        : 'bg-gray-800 text-gray-500'
-                    }`}
-                  >
-                    {stage.replace('_', ' ')}
-                  </div>
-                );
-              })}
-            </div>
-
-            <p className="text-xs text-gray-600 mt-4">
-              This may take a few minutes for comprehensive content
-            </p>
+            </button>
           </div>
-        </div>
+        ) : (
+          // Full modal with minimize button
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+            <div className="bg-cyber-dark rounded-2xl border border-cyber-accent/30 p-8 max-w-lg text-center relative">
+              {/* Minimize button */}
+              <button
+                onClick={() => setIsMinimized(true)}
+                className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                title="Minimize to continue browsing"
+              >
+                <Minimize2 className="w-5 h-5" />
+              </button>
+
+              <div className="relative w-20 h-20 mx-auto mb-6">
+                <svg className="w-20 h-20 -rotate-90">
+                  <circle
+                    cx="40"
+                    cy="40"
+                    r="36"
+                    fill="none"
+                    stroke="rgba(0, 255, 159, 0.2)"
+                    strokeWidth="8"
+                  />
+                  <circle
+                    cx="40"
+                    cy="40"
+                    r="36"
+                    fill="none"
+                    stroke="#00ff9f"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={`${(courseGeneration.progress?.percent || 0) * 2.26} 226`}
+                    className="transition-all duration-500"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-lg font-bold text-cyber-accent">
+                    {(courseGeneration.progress?.percent || 0).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+
+              <h3 className="text-xl font-bold text-white mb-2">Generating Your Course</h3>
+              <p className="text-gray-400 mb-4">
+                Creating <span className="text-cyber-accent font-medium">"{courseGeneration.topic}"</span>
+              </p>
+
+              {/* Stage Progress */}
+              <div className="bg-cyber-darker rounded-xl p-4 mb-4">
+                <p className="text-cyber-accent font-medium mb-2">
+                  {courseGeneration.progress?.message || 'Starting...'}
+                </p>
+                {courseGeneration.progress?.currentLesson && (
+                  <p className="text-sm text-gray-500">
+                    Current: {courseGeneration.progress.currentLesson}
+                  </p>
+                )}
+              </div>
+
+              {/* Stage Indicators */}
+              <div className="flex flex-wrap gap-2 justify-center">
+                {['STRUCTURE', 'CONTENT', 'CODE_EXAMPLES', 'DIAGRAMS', 'WIKIPEDIA', 'QUIZZES'].map((stage) => {
+                  const currentStage = courseGeneration.progress?.stage || '';
+                  const stageOrder = ['QUEUED', 'STRUCTURE', 'CONTENT', 'LABS', 'CODE_EXAMPLES', 'DIAGRAMS', 'IMAGES', 'WIKIPEDIA', 'QUIZZES', 'REVIEW', 'COMPLETED'];
+                  const currentIdx = stageOrder.indexOf(currentStage);
+                  const stageIdx = stageOrder.indexOf(stage);
+                  const isCompleted = currentIdx > stageIdx;
+                  const isCurrent = currentStage === stage;
+
+                  return (
+                    <div
+                      key={stage}
+                      className={`px-2 py-1 rounded text-xs ${
+                        isCompleted
+                          ? 'bg-green-500/20 text-green-400'
+                          : isCurrent
+                          ? 'bg-cyber-accent/20 text-cyber-accent animate-pulse'
+                          : 'bg-gray-800 text-gray-500'
+                      }`}
+                    >
+                      {stage.replace('_', ' ')}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <p className="text-xs text-gray-600 mt-4">
+                This may take a few minutes for comprehensive content
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                Click the minimize button to continue browsing while generating
+              </p>
+            </div>
+          </div>
+        )
       )}
 
       {/* Success Toast */}

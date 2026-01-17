@@ -62,6 +62,27 @@ class ExternalResourceResponse(BaseModel):
 
 
 # ============================================================================
+# LAB SUMMARY SCHEMA (for embedding in lesson response)
+# ============================================================================
+
+class LabSummaryResponse(BaseModel):
+    """Summary of lab data embedded in lesson response."""
+    id: UUID
+    title: str
+    description: Optional[str] = None
+    difficulty: str
+    objectives: List[str] = []
+    instructions: Optional[str] = None
+    hints: List[str] = []
+    estimated_time: int = 30
+    preset: Optional[str] = None
+    flags: List[Any] = []
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
 # LESSON SCHEMAS
 # ============================================================================
 
@@ -121,6 +142,7 @@ class LessonFullResponse(BaseModel):
     quiz_data: Optional[dict] = None
     content_blocks: List[ContentBlockResponse] = []
     external_resources: List[ExternalResourceResponse] = []
+    lab: Optional[LabSummaryResponse] = None
     created_at: datetime
     updated_at: datetime
 

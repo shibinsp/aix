@@ -22,6 +22,7 @@ interface Environment {
   monthly_usage_minutes: number;
   created_at: string;
   last_started_at?: string;
+  error_message?: string;
 }
 
 interface EnvironmentLimits {
@@ -258,9 +259,14 @@ function EnvironmentCard({
         )}
 
         {isError && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-red-400" />
-            <span className="text-sm text-red-400">Environment error. Try restarting.</span>
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertCircle className="w-4 h-4 text-red-400" />
+              <span className="text-sm text-red-400">Environment error. Click Start to retry or Reset to clear data.</span>
+            </div>
+            {environment?.error_message && (
+              <p className="text-xs text-gray-500 mt-1">{environment.error_message}</p>
+            )}
           </div>
         )}
 
@@ -308,6 +314,11 @@ function EnvironmentCard({
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Starting...
+                  </>
+                ) : isError ? (
+                  <>
+                    <Play className="w-4 h-4" />
+                    Retry
                   </>
                 ) : (
                   <>

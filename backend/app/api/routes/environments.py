@@ -204,6 +204,10 @@ async def start_environment(
         if environment.status == EnvironmentStatus.STARTING:
             raise HTTPException(status_code=409, detail="Environment is already starting")
 
+        # Clear error state if retrying
+        if environment.status == EnvironmentStatus.ERROR:
+            environment.error_message = None
+
         environment.reset_monthly_usage()
         environment.status = EnvironmentStatus.STARTING
         await db.commit()
