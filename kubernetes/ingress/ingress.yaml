@@ -1,6 +1,7 @@
 # Ingress Configuration for AI CyberX
 # Routes traffic to backend and frontend
 # Includes WebSocket support annotations
+# Compatible with both Traefik (k3s) and Nginx ingress controllers
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -11,33 +12,13 @@ metadata:
     app.kubernetes.io/name: cyberaix
     app.kubernetes.io/component: ingress
   annotations:
-    # Nginx Ingress Controller annotations
-    kubernetes.io/ingress.class: nginx
-    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-
-    # WebSocket support
-    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
-    nginx.ingress.kubernetes.io/upstream-hash-by: "$request_uri"
-
-    # Connection upgrades for WebSocket
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection "upgrade";
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      proxy_set_header X-Forwarded-Proto $scheme;
-
-    # SSL redirect
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # Traefik annotations (k3s default)
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
 
     # cert-manager for TLS
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   tls:
     - hosts:
         - cyyberaix.in

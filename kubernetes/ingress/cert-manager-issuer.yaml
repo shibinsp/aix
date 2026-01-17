@@ -19,7 +19,7 @@ spec:
     solvers:
       - http01:
           ingress:
-            class: nginx
+            class: traefik
 ---
 # Staging issuer for testing (higher rate limits)
 apiVersion: cert-manager.io/v1
@@ -38,4 +38,4 @@ spec:
     solvers:
       - http01:
           ingress:
-            class: nginx
+            class: traefik

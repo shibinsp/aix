@@ -47,7 +47,7 @@ spec:
       containers:
         - name: backend
           image: cyberaix/backend:v1.0.0
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
               name: http
@@ -103,22 +103,5 @@ spec:
             failureThreshold: 30
       volumes:
         - name: app-data
-          persistentVolumeClaim:
-            claimName: app-data
----
-# PVC for app data (vector DB, etc.)
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: app-data
-  namespace: cyberaix-system
-  labels:
-    app.kubernetes.io/name: cyberaix
-    app.kubernetes.io/component: backend
-spec:
-  accessModes:
-    - ReadWriteMany  # RWX for shared access across replicas
-  storageClassName: cyberaix-storage
-  resources:
-    requests:
-      storage: 10Gi
+          emptyDir:
+            sizeLimit: 10Gi

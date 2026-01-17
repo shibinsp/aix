@@ -46,7 +46,7 @@ spec:
       containers:
         - name: frontend
           image: cyberaix/frontend:v1.0.0
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
               name: http

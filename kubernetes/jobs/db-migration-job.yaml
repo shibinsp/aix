@@ -27,7 +27,7 @@ spec:
       containers:
         - name: migration
           image: cyberaix/backend:v1.0.0
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
             - -c
