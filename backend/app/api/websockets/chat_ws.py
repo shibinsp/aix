@@ -95,83 +95,106 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
             })
 
             while True:
-                # Receive message
-                data = await websocket.receive_json()
+                try:
+                    # Receive message
+                    data = await websocket.receive_json()
 
-                if data.get("type") == "message":
-                    content = data.get("content", "")
-                    if not content:
-                        continue
+                    if data.get("type") == "message":
+                        content = data.get("content", "")
+                        if not content:
+                            continue
 
-                    # Save user message
-                    user_message = ChatMessage(
-                        session_id=session_id,
-                        role=MessageRole.USER,
-                        content=content,
-                    )
-                    db.add(user_message)
-                    await db.commit()
+                        # Save user message
+                        user_message = ChatMessage(
+                            session_id=session_id,
+                            role=MessageRole.USER,
+                            content=content,
+                        )
+                        db.add(user_message)
+                        await db.commit()
 
-                    # Get RAG context
-                    rag_context = knowledge_base.knowledge_base.get_context_for_query(content)
-                    rag_sources = knowledge_base.knowledge_base.get_sources_for_query(content)
+                        # Get RAG context
+                        rag_context = knowledge_base.knowledge_base.get_context_for_query(content)
+                        rag_sources = knowledge_base.knowledge_base.get_sources_for_query(content)
 
-                    # Send sources first
-                    if rag_sources:
+                        # Send sources first
+                        if rag_sources:
+                            await websocket.send_json({
+                                "type": "sources",
+                                "data": rag_sources,
+                            })
+
+                        # Get message history
+                        messages_result = await db.execute(
+                            select(ChatMessage)
+                            .where(ChatMessage.session_id == session_id)
+                            .order_by(ChatMessage.created_at)
+                            .limit(20)
+                        )
+                        history = messages_result.scalars().all()
+
+                        messages = [
+                            {"role": msg.role.value, "content": msg.content}
+                            for msg in history
+                        ]
+
+                        # Stream AI response
+                        full_response = ""
+                        await websocket.send_json({"type": "stream_start"})
+
+                        try:
+                            async for chunk in teaching_engine.generate_stream(
+                                messages=messages,
+                                teaching_mode=session.teaching_mode,
+                                skill_level=user.skill_level.value if user else "beginner",
+                                rag_context=rag_context if rag_context else None,
+                            ):
+                                full_response += chunk
+                                await websocket.send_json({
+                                    "type": "stream_chunk",
+                                    "content": chunk,
+                                })
+                        except Exception as stream_error:
+                            logger.error(f"AI streaming error: {stream_error}", session_id=session_id)
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "Failed to generate AI response. Please try again.",
+                            })
+                            continue
+
+                        # Save AI response
+                        ai_message = ChatMessage(
+                            session_id=session_id,
+                            role=MessageRole.ASSISTANT,
+                            content=full_response,
+                            rag_context={"sources": rag_sources} if rag_sources else None,
+                        )
+                        db.add(ai_message)
+                        session.message_count += 2
+                        await db.commit()
+
+                        # Send completion
                         await websocket.send_json({
-                            "type": "sources",
-                            "data": rag_sources,
+                            "type": "stream_end",
+                            "message_id": str(ai_message.id),
                         })
 
-                    # Get message history
-                    messages_result = await db.execute(
-                        select(ChatMessage)
-                        .where(ChatMessage.session_id == session_id)
-                        .order_by(ChatMessage.created_at)
-                        .limit(20)
-                    )
-                    history = messages_result.scalars().all()
+                    elif data.get("type") == "ping":
+                        await websocket.send_json({"type": "pong"})
 
-                    messages = [
-                        {"role": msg.role.value, "content": msg.content}
-                        for msg in history
-                    ]
-
-                    # Stream AI response
-                    full_response = ""
-                    await websocket.send_json({"type": "stream_start"})
-
-                    async for chunk in teaching_engine.generate_stream(
-                        messages=messages,
-                        teaching_mode=session.teaching_mode,
-                        skill_level=user.skill_level.value if user else "beginner",
-                        rag_context=rag_context if rag_context else None,
-                    ):
-                        full_response += chunk
-                        await websocket.send_json({
-                            "type": "stream_chunk",
-                            "content": chunk,
-                        })
-
-                    # Save AI response
-                    ai_message = ChatMessage(
-                        session_id=session_id,
-                        role=MessageRole.ASSISTANT,
-                        content=full_response,
-                        rag_context={"sources": rag_sources} if rag_sources else None,
-                    )
-                    db.add(ai_message)
-                    session.message_count += 2
-                    await db.commit()
-
-                    # Send completion
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid JSON received from WebSocket: {user_id}")
                     await websocket.send_json({
-                        "type": "stream_end",
-                        "message_id": str(ai_message.id),
+                        "type": "error",
+                        "message": "Invalid message format",
                     })
-
-                elif data.get("type") == "ping":
-                    await websocket.send_json({"type": "pong"})
+                except Exception as loop_error:
+                    logger.error(f"Error in WebSocket message loop: {loop_error}", user_id=user_id, session_id=session_id)
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "An error occurred. Please try again.",
+                    })
+                    # Don't break the loop for recoverable errors
 
     except WebSocketDisconnect:
         manager.disconnect(user_id)

@@ -1,10 +1,19 @@
 import axios from 'axios';
 import { useAuthStore } from '@/store/authStore';
 
+// API Base URL - must be set via NEXT_PUBLIC_API_URL environment variable
+// For development, defaults to localhost
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ||
   (typeof window !== 'undefined' && window.location.hostname === 'localhost'
     ? 'http://localhost:8000'
-    : 'https://cyyberaix.in');
+    : (() => {
+        // In production, construct from current hostname
+        if (typeof window !== 'undefined') {
+          const protocol = window.location.protocol;
+          return `${protocol}//${window.location.hostname}`;
+        }
+        return 'http://localhost:8000'; // SSR fallback
+      })());
 
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,

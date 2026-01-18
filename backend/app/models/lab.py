@@ -70,6 +70,9 @@ class Lab(Base):
     is_published = Column(Boolean, default=False)
     is_ai_generated = Column(Boolean, default=False)
 
+    # Course relationship for cascade delete
+    course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id"), nullable=True, index=True)
+
     # Owner - each user owns their labs
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
 
@@ -77,9 +80,16 @@ class Lab(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
+    # Soft delete tracking
+    is_deleted = Column(Boolean, default=False, index=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
     # Relationships
     sessions = relationship("LabSession", back_populates="lab", cascade="all, delete-orphan")
     owner = relationship("User", foreign_keys=[created_by])
+    course = relationship("Course", foreign_keys=[course_id])
+    deleted_by_user = relationship("User", foreign_keys=[deleted_by])
 
 
 class LabSession(Base):

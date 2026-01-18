@@ -14,7 +14,7 @@ from datetime import datetime
 from app.core.database import get_db, async_session_maker
 from app.core.security import get_current_user_id
 from app.core.dependencies import get_current_admin
-from app.core.sanitization import validate_pagination
+from app.core.sanitization import validate_pagination, sanitize_like_pattern
 from app.models.user import User
 from app.models.course import (
     Course, Module, Lesson, ContentBlock, ExternalResource,
@@ -32,6 +32,7 @@ from app.services.ai import teaching_engine
 from app.services.ai.course_generator import course_generator
 from app.services.limits import limit_enforcer
 from app.services.progress_tracker import progress_tracker
+from app.utils.course_utils import normalize_lesson_type
 
 logger = structlog.get_logger()
 
@@ -74,31 +75,6 @@ def slugify(text: str) -> str:
     return text.strip('-')
 
 
-def normalize_lesson_type(lesson_type: str) -> str:
-    """Normalize AI-generated lesson types to valid enum values."""
-    valid_types = {"text", "video", "interactive", "quiz", "lab"}
-    lesson_type = lesson_type.lower().strip()
-
-    # Map common AI variations to valid types
-    type_mapping = {
-        "hands-on": "interactive",
-        "hands_on": "interactive",
-        "practical": "interactive",
-        "exercise": "interactive",
-        "tutorial": "text",
-        "lecture": "text",
-        "reading": "text",
-        "assessment": "quiz",
-        "test": "quiz",
-        "challenge": "lab",
-        "practice": "lab",
-    }
-
-    if lesson_type in valid_types:
-        return lesson_type
-    return type_mapping.get(lesson_type, "text")
-
-
 @router.get("", response_model=List[CourseResponse])
 async def list_courses(
     db: AsyncSession = Depends(get_db),
@@ -127,7 +103,8 @@ async def list_courses(
     if difficulty:
         query = query.where(Course.difficulty == difficulty)
     if search:
-        query = query.where(Course.title.ilike(f"%{search}%"))
+        search_pattern = sanitize_like_pattern(search)
+        query = query.where(Course.title.ilike(f"%{search_pattern}%"))
 
     skip, limit = validate_pagination(skip, limit, max_limit=50)
     query = query.order_by(Course.created_at.desc()).offset(skip).limit(limit)
@@ -147,25 +124,21 @@ async def list_categories():
     ]
 
 
-@router.get("/{course_id}", response_model=CourseResponse)
-async def get_course(
-    course_id: UUID,
+@router.get("/generate/{job_id}/status", response_model=CourseGenerationJobResponse)
+async def get_generation_status(
+    job_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get course details."""
-    result = await db.execute(
-        select(Course).options(
-            selectinload(Course.modules).selectinload(Module.lessons)
-        ).where(Course.id == course_id)
-    )
-    course = result.scalar_one_or_none()
+    """Get the status of a course generation job."""
+    job = await db.get(CourseGenerationJob, job_id)
 
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+    if not job:
+        raise HTTPException(status_code=404, detail="Generation job not found")
 
-    return CourseResponse.model_validate(course)
+    return CourseGenerationJobResponse.model_validate(job)
 
 
+# More specific routes must come before generic ones to prevent conflicts
 @router.get("/slug/{slug}", response_model=CourseResponse)
 async def get_course_by_slug(
     slug: str,
@@ -176,6 +149,25 @@ async def get_course_by_slug(
         select(Course).options(
             selectinload(Course.modules).selectinload(Module.lessons)
         ).where(Course.slug == slug)
+    )
+    course = result.scalar_one_or_none()
+
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    return CourseResponse.model_validate(course)
+
+
+@router.get("/{course_id}", response_model=CourseResponse)
+async def get_course(
+    course_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get course details by ID."""
+    result = await db.execute(
+        select(Course).options(
+            selectinload(Course.modules).selectinload(Module.lessons)
+        ).where(Course.id == course_id)
     )
     course = result.scalar_one_or_none()
 
@@ -530,20 +522,6 @@ async def run_course_generation(
                     await db.commit()
             except Exception as db_error:
                 logger.error("Failed to update job status", error=str(db_error))
-
-
-@router.get("/generate/{job_id}/status", response_model=CourseGenerationJobResponse)
-async def get_generation_status(
-    job_id: UUID,
-    db: AsyncSession = Depends(get_db),
-):
-    """Get the status of a course generation job."""
-    job = await db.get(CourseGenerationJob, job_id)
-
-    if not job:
-        raise HTTPException(status_code=404, detail="Generation job not found")
-
-    return CourseGenerationJobResponse.model_validate(job)
 
 
 @router.get("/{course_id}/lessons/{lesson_id}/full", response_model=LessonFullResponse)

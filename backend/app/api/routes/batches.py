@@ -9,6 +9,7 @@ import structlog
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_permission
+from app.core.sanitization import sanitize_like_pattern
 from app.models.user import User
 from app.models.admin import Permission
 from app.models.organization import (
@@ -89,7 +90,8 @@ async def list_batches(
         query = query.where(Batch.status == BatchStatus(status))
 
     if search:
-        query = query.where(Batch.name.ilike(f"%{search}%"))
+        search_pattern = sanitize_like_pattern(search)
+        query = query.where(Batch.name.ilike(f"%{search_pattern}%"))
 
     # Count total
     count_query = select(func.count()).select_from(query.subquery())

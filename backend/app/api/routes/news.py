@@ -6,11 +6,11 @@ Aggregates real-time news from:
 - NewsAPI.org (optional, 100 req/day free)
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 
 from app.core.database import get_db
@@ -57,7 +57,7 @@ async def get_cyber_news(refresh: bool = False):
 
     return NewsResponse(
         articles=articles,
-        generated_at=datetime.now().isoformat(),
+        generated_at=datetime.now(timezone.utc).isoformat(),
         cached=not refresh,
         sources=sources
     )
@@ -417,13 +417,17 @@ class SavedArticlesListResponse(BaseModel):
 
 @router.get("/saved", response_model=SavedArticlesListResponse)
 async def get_saved_articles(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Get all saved articles for the current user."""
-    saved = db.query(SavedArticle).filter(
-        SavedArticle.user_id == current_user.id
-    ).order_by(SavedArticle.saved_at.desc()).all()
+    from sqlalchemy import select
+    result = await db.execute(
+        select(SavedArticle)
+        .filter(SavedArticle.user_id == current_user.id)
+        .order_by(SavedArticle.saved_at.desc())
+    )
+    saved = result.scalars().all()
 
     articles = [
         SavedArticleResponse(
@@ -454,15 +458,19 @@ async def get_saved_articles(
 @router.post("/saved", response_model=SavedArticleResponse)
 async def save_article(
     request: SaveArticleRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Save an article to the user's saved articles."""
+    from sqlalchemy import select
     # Check if already saved
-    existing = db.query(SavedArticle).filter(
-        SavedArticle.user_id == current_user.id,
-        SavedArticle.article_id == request.id
-    ).first()
+    result = await db.execute(
+        select(SavedArticle).filter(
+            SavedArticle.user_id == current_user.id,
+            SavedArticle.article_id == request.id
+        )
+    )
+    existing = result.scalar_one_or_none()
 
     if existing:
         # Article already saved, return it
@@ -496,8 +504,8 @@ async def save_article(
     )
 
     db.add(saved)
-    db.commit()
-    db.refresh(saved)
+    await db.commit()
+    await db.refresh(saved)
 
     logger.info("Article saved", user_id=str(current_user.id), article_id=request.id)
 
@@ -519,20 +527,24 @@ async def save_article(
 @router.delete("/saved/{article_id}")
 async def unsave_article(
     article_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Remove an article from saved articles."""
-    saved = db.query(SavedArticle).filter(
-        SavedArticle.user_id == current_user.id,
-        SavedArticle.article_id == article_id
-    ).first()
+    from sqlalchemy import select
+    result = await db.execute(
+        select(SavedArticle).filter(
+            SavedArticle.user_id == current_user.id,
+            SavedArticle.article_id == article_id
+        )
+    )
+    saved = result.scalar_one_or_none()
 
     if not saved:
         raise HTTPException(status_code=404, detail="Saved article not found")
 
-    db.delete(saved)
-    db.commit()
+    await db.delete(saved)
+    await db.commit()
 
     logger.info("Article unsaved", user_id=str(current_user.id), article_id=article_id)
 
@@ -542,20 +554,24 @@ async def unsave_article(
 @router.post("/saved/{article_id}/favorite")
 async def toggle_favorite(
     article_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Toggle favorite status for a saved article."""
-    saved = db.query(SavedArticle).filter(
-        SavedArticle.user_id == current_user.id,
-        SavedArticle.article_id == article_id
-    ).first()
+    from sqlalchemy import select
+    result = await db.execute(
+        select(SavedArticle).filter(
+            SavedArticle.user_id == current_user.id,
+            SavedArticle.article_id == article_id
+        )
+    )
+    saved = result.scalar_one_or_none()
 
     if not saved:
         raise HTTPException(status_code=404, detail="Saved article not found")
 
     saved.is_favorite = not saved.is_favorite
-    db.commit()
+    await db.commit()
 
     logger.info(
         "Article favorite toggled",

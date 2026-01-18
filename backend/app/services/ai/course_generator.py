@@ -33,42 +33,9 @@ from app.models.lab import Lab, LabType, LabEnvironmentType
 from app.services.ai.teaching_engine import teaching_engine
 from app.services.ai.diagram_generator import diagram_generator
 from app.services.ai.quiz_generator import quiz_generator
+from app.utils.course_utils import normalize_lesson_type
 
 logger = structlog.get_logger()
-
-
-def normalize_lesson_type(lesson_type: str) -> str:
-    """Normalize AI-generated lesson types to valid enum values."""
-    valid_types = {"text", "video", "interactive", "quiz", "lab"}
-    lesson_type = lesson_type.lower().strip()
-
-    # Map common AI variations to valid types
-    type_mapping = {
-        "hands-on": "interactive",
-        "hands_on": "interactive",
-        "practical": "interactive",
-        "exercise": "interactive",
-        "project": "interactive",
-        "workshop": "interactive",
-        "activity": "interactive",
-        "tutorial": "text",
-        "lecture": "text",
-        "reading": "text",
-        "theory": "text",
-        "overview": "text",
-        "introduction": "text",
-        "assessment": "quiz",
-        "test": "quiz",
-        "exam": "quiz",
-        "challenge": "lab",
-        "practice": "lab",
-        "ctf": "lab",
-        "simulation": "lab",
-    }
-
-    if lesson_type in valid_types:
-        return lesson_type
-    return type_mapping.get(lesson_type, "text")
 
 
 class CourseGenerationPipeline:

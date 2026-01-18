@@ -43,3 +43,14 @@ def validate_pagination(skip: int, limit: int, max_limit: int = 100) -> tuple[in
     skip = max(0, skip)
     limit = max(1, min(limit, max_limit))
     return skip, limit
+
+
+def sanitize_like_pattern(pattern: str) -> str:
+    """Escape special characters in LIKE patterns to prevent SQL injection through wildcards."""
+    if not pattern:
+        return ""
+    # Escape backslash first, then escape % and _ wildcards
+    pattern = pattern.replace('\\', '\\\\')
+    pattern = pattern.replace('%', '\\%')
+    pattern = pattern.replace('_', '\\_')
+    return pattern

@@ -10,6 +10,7 @@ import structlog
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_permission
+from app.core.sanitization import sanitize_like_pattern
 from app.models.user import User
 from app.models.admin import Permission
 from app.models.organization import (
@@ -115,9 +116,10 @@ async def list_organizations(
 
     # Apply filters
     if search:
+        search_pattern = sanitize_like_pattern(search)
         query = query.where(
-            Organization.name.ilike(f"%{search}%") |
-            Organization.slug.ilike(f"%{search}%")
+            Organization.name.ilike(f"%{search_pattern}%") |
+            Organization.slug.ilike(f"%{search_pattern}%")
         )
     if org_type:
         query = query.where(Organization.org_type == OrganizationType(org_type))
@@ -272,10 +274,11 @@ async def list_organization_members(
         query = query.where(OrganizationMembership.org_role == OrgMemberRole(role))
 
     if search:
+        search_pattern = sanitize_like_pattern(search)
         query = query.join(User).where(
-            User.username.ilike(f"%{search}%") |
-            User.email.ilike(f"%{search}%") |
-            User.full_name.ilike(f"%{search}%")
+            User.username.ilike(f"%{search_pattern}%") |
+            User.email.ilike(f"%{search_pattern}%") |
+            User.full_name.ilike(f"%{search_pattern}%")
         )
 
     # Count total

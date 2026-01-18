@@ -134,10 +134,16 @@ class Course(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Soft delete tracking
+    is_deleted = Column(Boolean, default=False, index=True)
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
     # Relationships
     modules = relationship("Module", back_populates="course", cascade="all, delete-orphan", order_by="Module.order")
     generation_jobs = relationship("CourseGenerationJob", back_populates="course", cascade="all, delete-orphan")
     owner = relationship("User", foreign_keys=[created_by])
+    deleted_by_user = relationship("User", foreign_keys=[deleted_by])
 
     def __repr__(self):
         return f"<Course {self.title}>"

@@ -6,8 +6,11 @@ from typing import Optional
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import structlog
 
 from app.core.config import settings
+
+logger = structlog.get_logger()
 
 
 def _get_encryption_key() -> bytes:
@@ -65,7 +68,11 @@ def decrypt_api_key(encrypted_key: str) -> Optional[str]:
         encrypted_bytes = base64.urlsafe_b64decode(encrypted_key.encode())
         decrypted = fernet.decrypt(encrypted_bytes)
         return decrypted.decode()
-    except Exception:
+    except (ValueError, base64.binascii.Error) as e:
+        logger.error(f"Failed to decode encrypted key: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to decrypt API key: {e}")
         return None
 
 

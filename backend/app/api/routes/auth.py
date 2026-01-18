@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,7 +113,7 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
         )
 
     # Update last login
-    user.last_login = datetime.utcnow()
+    user.last_login = datetime.now(timezone.utc)
     await db.commit()
 
     # Generate token
@@ -149,7 +149,7 @@ async def login_json(request: Request, credentials: UserLogin, db: AsyncSession 
             detail="User account is disabled",
         )
 
-    user.last_login = datetime.utcnow()
+    user.last_login = datetime.now(timezone.utc)
     await db.commit()
 
     access_token = create_access_token(data={"sub": str(user.id)})

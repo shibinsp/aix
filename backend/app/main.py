@@ -8,7 +8,7 @@ import structlog
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.rate_limit import limiter
-from app.core.middleware import HTTPSRedirectMiddleware
+from app.core.middleware import HTTPSRedirectMiddleware, SecurityHeadersMiddleware
 from app.api.routes import auth, chat, courses, labs, skills, users, news
 from app.api.routes import organizations, batches, environments, limits, invitations, analytics
 from app.api.routes.admin import router as admin_router
@@ -52,14 +52,31 @@ async def lifespan(app: FastAPI):
     if active_count > 0:
         logger.info(f"Cleaning up {active_count} active lab sessions...")
         session_ids = list(lab_manager.active_sessions.keys())
-        for session_id in session_ids:
-            try:
-                await lab_manager.stop_lab_session(session_id)
-            except Exception as e:
-                logger.error(f"Failed to cleanup session {session_id}: {e}")
-        logger.info("Lab sessions cleaned up")
 
-    await lab_manager.cleanup_expired_sessions()
+        # Cleanup with timeout to prevent hanging
+        import asyncio
+        cleanup_timeout = 30  # seconds
+
+        async def cleanup_with_timeout():
+            for session_id in session_ids:
+                try:
+                    await lab_manager.stop_lab_session(session_id)
+                except Exception as e:
+                    logger.error(f"Failed to cleanup session {session_id}: {e}")
+
+        try:
+            await asyncio.wait_for(cleanup_with_timeout(), timeout=cleanup_timeout)
+            logger.info("Lab sessions cleaned up")
+        except asyncio.TimeoutError:
+            logger.warning(f"Lab cleanup timed out after {cleanup_timeout} seconds")
+
+    try:
+        await asyncio.wait_for(
+            lab_manager.cleanup_expired_sessions(),
+            timeout=10
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Expired sessions cleanup timed out")
 
 
 app = FastAPI(
@@ -72,6 +89,9 @@ app = FastAPI(
 # Rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Security headers middleware (apply to all responses)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # HTTPS redirect (enable in production behind reverse proxy)
 if settings.FORCE_HTTPS:

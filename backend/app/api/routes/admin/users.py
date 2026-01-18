@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_admin, get_current_super_admin
 from app.core.security import get_password_hash
 from app.core.permissions import can_manage_role
+from app.core.sanitization import sanitize_like_pattern
 from app.models.user import User
 from app.models.admin import UserRole, UserPermissionOverride
 from app.models.audit import AuditAction
@@ -47,10 +48,11 @@ async def list_users(
     query = select(User)
 
     if search:
+        search_pattern = sanitize_like_pattern(search)
         query = query.where(
             or_(
-                User.email.ilike(f"%{search}%"),
-                User.username.ilike(f"%{search}%"),
+                User.email.ilike(f"%{search_pattern}%"),
+                User.username.ilike(f"%{search_pattern}%"),
             )
         )
 
