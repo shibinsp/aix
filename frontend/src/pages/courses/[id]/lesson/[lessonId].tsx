@@ -29,6 +29,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   FlaskConical,
+  CheckSquare,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { coursesApi, labsApi, environmentsApi } from '@/services/api';
@@ -132,6 +133,24 @@ export default function LessonViewer() {
     queryKey: ['lesson', courseId, lessonId],
     queryFn: () => coursesApi.getFullLesson(courseId as string, lessonId as string),
     enabled: !!courseId && !!lessonId && isAuthenticated,
+  });
+
+  // Fetch lesson progress
+  const { data: lessonProgress } = useQuery({
+    queryKey: ['lesson-progress', courseId, lessonId],
+    queryFn: () => coursesApi.getLessonProgress(courseId as string, lessonId as string),
+    enabled: !!courseId && !!lessonId && isAuthenticated,
+  });
+
+  // Mark lesson complete mutation
+  const markLessonCompleteMutation = useMutation({
+    mutationFn: () => coursesApi.markLessonComplete(courseId as string, lessonId as string),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lesson-progress', courseId, lessonId] });
+      queryClient.invalidateQueries({ queryKey: ['my-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['my-analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['course', courseId] });
+    },
   });
 
   // Check if this is a lab lesson (ensure boolean for React Query)
@@ -593,6 +612,48 @@ export default function LessonViewer() {
                 </ul>
               </div>
             )}
+
+            {/* Mark Lesson Complete */}
+            <div className="mt-8 p-6 bg-gradient-to-r from-green-500/10 to-cyber-accent/10 border border-green-500/30 rounded-xl">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                  <h3 className="text-lg font-medium text-white">Finished this lesson?</h3>
+                  <p className="text-sm text-gray-400">Mark it complete to track your progress</p>
+                </div>
+                <button
+                  onClick={() => markLessonCompleteMutation.mutate()}
+                  disabled={markLessonCompleteMutation.isPending || lessonProgress?.status === 'completed'}
+                  className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all ${
+                    lessonProgress?.status === 'completed'
+                      ? 'bg-green-600 text-white cursor-default'
+                      : 'bg-green-600 hover:bg-green-700 text-white hover:shadow-lg hover:shadow-green-600/20'
+                  } disabled:opacity-70`}
+                >
+                  {markLessonCompleteMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : lessonProgress?.status === 'completed' ? (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      Completed
+                    </>
+                  ) : (
+                    <>
+                      <CheckSquare className="w-4 h-4" />
+                      Mark Complete
+                    </>
+                  )}
+                </button>
+              </div>
+              {lessonProgress?.status === 'completed' && lessonProgress?.points_awarded > 0 && (
+                <div className="mt-3 text-sm text-green-400 flex items-center gap-2">
+                  <Trophy className="w-4 h-4" />
+                  You earned {lessonProgress.points_awarded} points for completing this lesson!
+                </div>
+              )}
+            </div>
 
             {/* External Resources */}
             {lesson.external_resources?.length > 0 && (

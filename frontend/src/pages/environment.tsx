@@ -139,6 +139,19 @@ export default function EnvironmentPage() {
   );
 }
 
+function formatElapsedTime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${secs}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${secs}s`;
+  }
+  return `${secs}s`;
+}
+
 function EnvironmentCard({
   envType,
   environment,
@@ -153,6 +166,33 @@ function EnvironmentCard({
   const queryClient = useQueryClient();
   const isTerminal = envType === 'terminal';
   const Icon = isTerminal ? Terminal : Monitor;
+
+  // Live elapsed time tracking
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!environment || environment.status !== 'running' || !environment.last_started_at) {
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const startTime = new Date(environment.last_started_at).getTime();
+
+    // Calculate initial elapsed time
+    const updateElapsed = () => {
+      const now = Date.now();
+      const elapsed = Math.floor((now - startTime) / 1000);
+      setElapsedSeconds(Math.max(0, elapsed));
+    };
+
+    // Update immediately
+    updateElapsed();
+
+    // Update every second
+    const interval = setInterval(updateElapsed, 1000);
+
+    return () => clearInterval(interval);
+  }, [environment?.status, environment?.last_started_at]);
 
   const startMutation = useMutation({
     mutationFn: () => environmentsApi.start(envType),
@@ -246,9 +286,15 @@ function EnvironmentCard({
         {/* Connection Info */}
         {isRunning && environment?.access_url && (
           <div className="mb-4 p-3 bg-cyber-darker rounded-lg">
-            <div className="flex items-center gap-2 text-sm">
-              <Wifi className="w-4 h-4 text-green-400" />
-              <span className="text-green-400 font-medium">Connected</span>
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <Wifi className="w-4 h-4 text-green-400" />
+                <span className="text-green-400 font-medium">Connected</span>
+              </div>
+              <div className="flex items-center gap-2 text-cyber-accent">
+                <Clock className="w-4 h-4" />
+                <span className="font-mono text-sm">{formatElapsedTime(elapsedSeconds)}</span>
+              </div>
             </div>
             {isTerminal && environment.ssh_port && (
               <p className="text-xs text-gray-500 mt-1 font-mono">

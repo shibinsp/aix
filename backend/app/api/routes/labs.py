@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
 import re
+import os
 
 from app.core.database import get_db
 from app.core.security import get_current_user_id
@@ -29,6 +30,15 @@ import json
 from pathlib import Path
 
 router = APIRouter()
+
+
+def is_running_in_kubernetes() -> bool:
+    """Check if we're running inside a Kubernetes cluster."""
+    return (
+        settings.K8S_IN_CLUSTER or
+        os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
+    )
+
 
 # Path to Alphha Linux lab templates
 ALPHHA_LABS_PATH = Path("/app/data/lab_templates/alphha_labs.json")
@@ -223,13 +233,33 @@ async def start_lab_session(
     if existing_session:
         return LabSessionResponse.model_validate(existing_session)
 
-    # Start user's persistent desktop environment (not creating new containers)
-    from app.services.environments import persistent_env_manager
-
+    # Start user's persistent desktop environment
+    # Route to appropriate backend based on environment (K8s, Docker, or simulation)
     try:
-        connection_info = await persistent_env_manager.start_environment(
-            str(user_id), "desktop", db
-        )
+        if is_running_in_kubernetes():
+            # Use Kubernetes-based environment manager
+            from app.services.environments.k8s_env_manager import k8s_env_manager
+            connection_info = await k8s_env_manager.start_environment(
+                str(user_id), "desktop", db
+            )
+        else:
+            # Use Docker-based environment manager
+            from app.services.environments import persistent_env_manager
+            docker_available = await persistent_env_manager.check_docker_available()
+
+            if docker_available:
+                connection_info = await persistent_env_manager.start_environment(
+                    str(user_id), "desktop", db
+                )
+            else:
+                # Simulation mode - return mock connection info for development
+                connection_info = {
+                    "access_url": f"http://localhost:6080",
+                    "vnc_port": 5900,
+                    "novnc_port": 6080,
+                    "vnc_password": "cyberaix",
+                    "status": "simulation"
+                }
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -860,3 +890,198 @@ async def end_lab_session(
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/sessions/{session_id}/mark-complete")
+async def mark_lab_complete(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Manually mark a lab session as complete.
+
+    This allows users to mark a lab as completed even if not all
+    objectives were auto-detected. Updates user stats and progress.
+    """
+    # Get the session
+    result = await db.execute(
+        select(LabSession).where(
+            LabSession.id == session_id,
+            LabSession.user_id == user_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Lab session not found")
+
+    if session.status == LabStatus.COMPLETED:
+        return {"message": "Lab already marked as complete", "status": "completed"}
+
+    # Mark session as completed
+    session.status = LabStatus.COMPLETED
+    session.completed_at = datetime.utcnow()
+
+    # Mark all objectives as completed if not already
+    total_objectives = 0
+    if session.lab_id:
+        lab_result = await db.execute(select(Lab).where(Lab.id == session.lab_id))
+        lab = lab_result.scalar_one_or_none()
+        if lab and lab.objectives:
+            total_objectives = len(lab.objectives)
+            session.completed_objectives = list(range(total_objectives))
+
+    await db.commit()
+
+    # Update user stats
+    user_result = await db.execute(select(User).where(User.id == UUID(user_id)))
+    user = user_result.scalar_one_or_none()
+    if user:
+        user.total_labs_completed = (user.total_labs_completed or 0) + 1
+        await db.commit()
+
+    # Record lab completion for limit tracking
+    await limit_enforcer.record_lab_stopped(UUID(user_id), db)
+
+    return {
+        "message": "Lab marked as complete",
+        "status": "completed",
+        "completed_objectives": session.completed_objectives,
+        "total_objectives": total_objectives,
+    }
+
+
+@router.post("/sessions/{session_id}/check-objectives")
+async def check_objectives(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Check which objectives have been completed via auto-detection.
+
+    This endpoint analyzes the command history logged during the lab session
+    and checks if any objectives match their verification patterns.
+
+    Objectives can define verification criteria in their configuration:
+    - command_pattern: Single regex pattern that must match a logged command
+    - command_patterns: List of patterns that must all match
+    - any_command_pattern: List of patterns where at least one must match
+
+    Returns:
+        completed_objectives: List of objective indices that are complete
+        total: Total number of objectives
+        all_completed: Whether all objectives are complete
+    """
+    from app.services.labs.objective_verifier import objective_verifier
+
+    # Get the session
+    result = await db.execute(
+        select(LabSession).where(
+            LabSession.id == session_id,
+            LabSession.user_id == user_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Lab session not found")
+
+    # Get the lab for objectives configuration
+    if not session.lab_id:
+        return {
+            "completed_objectives": list(session.completed_objectives or []),
+            "total": 0,
+            "all_completed": True,
+        }
+
+    lab_result = await db.execute(select(Lab).where(Lab.id == session.lab_id))
+    lab = lab_result.scalar_one_or_none()
+
+    if not lab or not lab.objectives:
+        return {
+            "completed_objectives": list(session.completed_objectives or []),
+            "total": 0,
+            "all_completed": True,
+        }
+
+    # Start with already completed objectives
+    completed = set(session.completed_objectives or [])
+    total_objectives = len(lab.objectives)
+
+    # Check each objective
+    for i, objective in enumerate(lab.objectives):
+        if i in completed:
+            continue
+
+        # Objectives can be either strings (simple) or dicts (with verification config)
+        if isinstance(objective, dict) and "verification" in objective:
+            verification_config = objective["verification"]
+            is_complete = await objective_verifier.verify_objective(
+                session_id,
+                verification_config,
+            )
+            if is_complete:
+                completed.add(i)
+        elif isinstance(objective, dict) and "command_pattern" in objective:
+            # Shorthand: verification config at objective level
+            is_complete = await objective_verifier.verify_objective(
+                session_id,
+                objective,
+            )
+            if is_complete:
+                completed.add(i)
+
+    # Update session if new completions found
+    completed_list = sorted(list(completed))
+    if completed_list != sorted(list(session.completed_objectives or [])):
+        session.completed_objectives = completed_list
+        await db.commit()
+
+    return {
+        "completed_objectives": completed_list,
+        "total": total_objectives,
+        "all_completed": len(completed_list) >= total_objectives,
+        "newly_completed": [i for i in completed_list if i not in (session.completed_objectives or [])],
+    }
+
+
+@router.get("/sessions/{session_id}/command-history")
+async def get_command_history(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get the command history for a lab session.
+
+    This is useful for debugging auto-detection and reviewing
+    what commands a user has executed during a lab.
+
+    Returns:
+        commands: List of command entries with timestamps
+        total: Total number of commands logged
+    """
+    from app.services.labs.objective_verifier import objective_verifier
+
+    # Verify session belongs to user
+    result = await db.execute(
+        select(LabSession).where(
+            LabSession.id == session_id,
+            LabSession.user_id == user_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Lab session not found")
+
+    # Get command history
+    history = objective_verifier.get_command_history(session_id)
+
+    return {
+        "session_id": session_id,
+        "commands": history,
+        "total": len(history),
+    }

@@ -93,7 +93,7 @@ export const chatApi = {
 
 // Courses API
 export const coursesApi = {
-  list: async (params?: { category?: string; difficulty?: string; search?: string; limit?: number; page?: number; page_size?: number }) => {
+  list: async (params?: { category?: string; difficulty?: string; search?: string; limit?: number; page?: number; page_size?: number; my_courses?: boolean }) => {
     const response = await api.get('/courses', { params });
     return response.data;
   },
@@ -137,15 +137,21 @@ export const coursesApi = {
     const response = await api.post(`/courses/generate/${jobId}/regenerate-lesson/${lessonId}`);
     return response.data;
   },
-  generateFromNews: async (article: {
+  generateFromNews: async (request: {
     article_id: string;
     title: string;
     summary: string;
     category: string;
     severity?: string;
     tags: string[];
+    num_modules?: number;
+    lesson_length?: 'short' | 'medium' | 'long';
+    include_code_examples?: boolean;
+    include_diagrams?: boolean;
+    include_quizzes?: boolean;
+    difficulty_override?: 'beginner' | 'intermediate' | 'advanced';
   }) => {
-    const response = await api.post('/courses/generate-from-news', article);
+    const response = await api.post('/courses/generate-from-news', request);
     return response.data;
   },
   publish: async (courseId: string) => {
@@ -158,6 +164,19 @@ export const coursesApi = {
   },
   generateLabs: async (courseId: string) => {
     const response = await api.post(`/courses/${courseId}/generate-labs`);
+    return response.data;
+  },
+  // Lesson progress methods
+  markLessonComplete: async (courseId: string, lessonId: string) => {
+    const response = await api.post(`/courses/${courseId}/lessons/${lessonId}/mark-complete`);
+    return response.data;
+  },
+  getLessonProgress: async (courseId: string, lessonId: string) => {
+    const response = await api.get(`/courses/${courseId}/lessons/${lessonId}/progress`);
+    return response.data;
+  },
+  getCourseProgress: async (courseId: string) => {
+    const response = await api.get(`/courses/${courseId}/progress`);
     return response.data;
   },
 };
@@ -219,6 +238,10 @@ export const labsApi = {
   },
   endSession: async (sessionId: string) => {
     const response = await api.post(`/labs/sessions/${sessionId}/end`);
+    return response.data;
+  },
+  markComplete: async (sessionId: string) => {
+    const response = await api.post(`/labs/sessions/${sessionId}/mark-complete`);
     return response.data;
   },
 };

@@ -56,6 +56,9 @@ module.exports = {
         'particle-1': 'particle1 15s linear infinite',
         'particle-2': 'particle2 20s linear infinite',
         'particle-3': 'particle3 25s linear infinite',
+        'path-draw': 'pathDraw 2s ease-out forwards',
+        'node-glow': 'nodeGlow 2s ease-in-out infinite',
+        'node-appear': 'nodeAppear 0.5s ease-out forwards',
       },
       keyframes: {
         glow: {
@@ -119,6 +122,18 @@ module.exports = {
         particle3: {
           '0%, 100%': { transform: 'translate(0, 0)', opacity: '0.3' },
           '50%': { transform: 'translate(-100px, -100px)', opacity: '0.8' },
+        },
+        pathDraw: {
+          '0%': { strokeDashoffset: '1000' },
+          '100%': { strokeDashoffset: '0' },
+        },
+        nodeGlow: {
+          '0%, 100%': { filter: 'drop-shadow(0 0 8px rgba(0,255,157,0.6))' },
+          '50%': { filter: 'drop-shadow(0 0 16px rgba(0,255,157,0.9))' },
+        },
+        nodeAppear: {
+          '0%': { transform: 'scale(0)', opacity: '0' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
         },
       },
       backgroundImage: {

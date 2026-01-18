@@ -130,6 +130,22 @@ export default function LabLessonPage() {
     },
   });
 
+  // Mark lab complete mutation
+  const markCompleteMutation = useMutation({
+    mutationFn: () => labsApi.markComplete(labSession?.lab_session_id || ''),
+    onSuccess: () => {
+      // Invalidate queries to update progress across the app
+      queryClient.invalidateQueries({ queryKey: ['my-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['my-analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['lab-session'] });
+      // Show success feedback
+      alert('Lab marked as complete! Your progress has been saved.');
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Failed to mark lab as complete');
+    },
+  });
+
   // Handle objective completion
   const handleObjectiveComplete = (index: number) => {
     if (!completedObjectives.includes(index)) {
@@ -250,8 +266,10 @@ export default function LabLessonPage() {
               resetEnvMutation.mutate();
             }
           }}
+          onMarkComplete={() => markCompleteMutation.mutate()}
           isStarting={startEnvMutation.isPending || currentEnv?.status === 'starting'}
           isStopping={stopEnvMutation.isPending}
+          isMarkingComplete={markCompleteMutation.isPending}
           error={error || undefined}
           courseTitle={labSession.course.title}
           lessonTitle={labSession.lesson.title}

@@ -473,6 +473,210 @@ interface GeneratingState {
   success: { courseId: string; courseSlug: string; labId?: string } | null;
 }
 
+interface CourseGenerationOptions {
+  num_modules: number;
+  lesson_length: 'short' | 'medium' | 'long';
+  include_code_examples: boolean;
+  include_diagrams: boolean;
+  include_quizzes: boolean;
+  difficulty_override: 'beginner' | 'intermediate' | 'advanced' | null;
+}
+
+// Learn This Options Modal Component
+function LearnOptionsModal({
+  article,
+  onClose,
+  onGenerate,
+}: {
+  article: NewsArticle;
+  onClose: () => void;
+  onGenerate: (options: CourseGenerationOptions) => void;
+}) {
+  const [options, setOptions] = useState<CourseGenerationOptions>({
+    num_modules: 4,
+    lesson_length: 'medium',
+    include_code_examples: true,
+    include_diagrams: true,
+    include_quizzes: true,
+    difficulty_override: null,
+  });
+
+  const difficultyLabels: Record<string, { label: string; desc: string }> = {
+    beginner: { label: 'Beginner', desc: 'New to cybersecurity' },
+    intermediate: { label: 'Intermediate', desc: 'Some experience' },
+    advanced: { label: 'Advanced', desc: 'Expert level' },
+  };
+
+  const lessonLengthLabels: Record<string, { label: string; desc: string }> = {
+    short: { label: 'Short', desc: '500-800 words' },
+    medium: { label: 'Medium', desc: '800-1200 words' },
+    long: { label: 'Long', desc: '1200-1800 words' },
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="relative w-full max-w-lg bg-cyber-dark rounded-2xl border border-cyber-accent/30 shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-cyber-accent/20">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-green-500/20">
+              <GraduationCap className="w-6 h-6 text-green-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">Generate Course</h2>
+              <p className="text-sm text-gray-400">Customize your learning experience</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          {/* Article Preview */}
+          <div className="p-4 bg-cyber-darker rounded-lg border border-gray-700">
+            <p className="text-sm text-gray-400 mb-1">Generating course from:</p>
+            <p className="text-white font-medium line-clamp-2">{article.title}</p>
+          </div>
+
+          {/* Number of Modules */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Number of Modules
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="3"
+                max="8"
+                value={options.num_modules}
+                onChange={(e) => setOptions({ ...options, num_modules: parseInt(e.target.value) })}
+                className="flex-1 h-2 bg-cyber-darker rounded-lg appearance-none cursor-pointer accent-cyber-accent"
+              />
+              <span className="w-8 text-center text-white font-mono">{options.num_modules}</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Each module contains 3-4 lessons</p>
+          </div>
+
+          {/* Lesson Length */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Lesson Length
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.entries(lessonLengthLabels).map(([key, { label, desc }]) => (
+                <button
+                  key={key}
+                  onClick={() => setOptions({ ...options, lesson_length: key as any })}
+                  className={`p-3 rounded-lg border text-center transition-colors ${
+                    options.lesson_length === key
+                      ? 'bg-cyber-accent/20 border-cyber-accent text-cyber-accent'
+                      : 'bg-cyber-darker border-gray-700 text-gray-300 hover:border-gray-600'
+                  }`}
+                >
+                  <div className="font-medium">{label}</div>
+                  <div className="text-xs text-gray-500 mt-1">{desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Difficulty Override */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Difficulty Level
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.entries(difficultyLabels).map(([key, { label, desc }]) => (
+                <button
+                  key={key}
+                  onClick={() => setOptions({
+                    ...options,
+                    difficulty_override: options.difficulty_override === key ? null : key as any
+                  })}
+                  className={`p-3 rounded-lg border text-center transition-colors ${
+                    options.difficulty_override === key
+                      ? 'bg-cyber-accent/20 border-cyber-accent text-cyber-accent'
+                      : 'bg-cyber-darker border-gray-700 text-gray-300 hover:border-gray-600'
+                  }`}
+                >
+                  <div className="font-medium">{label}</div>
+                  <div className="text-xs text-gray-500 mt-1">{desc}</div>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Leave unselected to auto-detect from article severity</p>
+          </div>
+
+          {/* Content Options */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-3">
+              Content Options
+            </label>
+            <div className="space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={options.include_code_examples}
+                  onChange={(e) => setOptions({ ...options, include_code_examples: e.target.checked })}
+                  className="w-4 h-4 rounded border-gray-600 bg-cyber-darker text-cyber-accent focus:ring-cyber-accent focus:ring-offset-0"
+                />
+                <span className="text-gray-300">Include code examples</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={options.include_diagrams}
+                  onChange={(e) => setOptions({ ...options, include_diagrams: e.target.checked })}
+                  className="w-4 h-4 rounded border-gray-600 bg-cyber-darker text-cyber-accent focus:ring-cyber-accent focus:ring-offset-0"
+                />
+                <span className="text-gray-300">Include diagrams & flowcharts</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={options.include_quizzes}
+                  onChange={(e) => setOptions({ ...options, include_quizzes: e.target.checked })}
+                  className="w-4 h-4 rounded border-gray-600 bg-cyber-darker text-cyber-accent focus:ring-cyber-accent focus:ring-offset-0"
+                />
+                <span className="text-gray-300">Include quizzes & review questions</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 p-6 border-t border-cyber-accent/20 bg-cyber-darker/50">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onGenerate(options)}
+            className="flex items-center gap-2 px-6 py-2 bg-green-500 text-white font-medium rounded-lg hover:bg-green-600 transition-colors"
+          >
+            <GraduationCap className="w-5 h-5" />
+            Generate Course
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CyberNews() {
   const router = useRouter();
   const { isAuthenticated, hasHydrated } = useAuthStore();
@@ -482,6 +686,7 @@ export default function CyberNews() {
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
   const [selectedArticleData, setSelectedArticleData] = useState<NewsArticle | null>(null);
   const [activeTab, setActiveTab] = useState<ViewTab>('all');
+  const [learnOptionsArticle, setLearnOptionsArticle] = useState<NewsArticle | null>(null);
   const [generating, setGenerating] = useState<GeneratingState>({
     articleId: null,
     isGenerating: false,
@@ -524,7 +729,17 @@ export default function CyberNews() {
     }
   };
 
-  const handleLearnFromNews = async (article: NewsArticle) => {
+  const handleLearnFromNews = (article: NewsArticle) => {
+    // Show the options modal instead of immediately generating
+    setLearnOptionsArticle(article);
+  };
+
+  const handleGenerateWithOptions = async (options: CourseGenerationOptions) => {
+    if (!learnOptionsArticle) return;
+
+    const article = learnOptionsArticle;
+    setLearnOptionsArticle(null); // Close the modal
+
     setGenerating({
       articleId: article.id,
       isGenerating: true,
@@ -540,6 +755,12 @@ export default function CyberNews() {
         category: article.category,
         severity: article.severity,
         tags: article.tags,
+        num_modules: options.num_modules,
+        lesson_length: options.lesson_length,
+        include_code_examples: options.include_code_examples,
+        include_diagrams: options.include_diagrams,
+        include_quizzes: options.include_quizzes,
+        difficulty_override: options.difficulty_override || undefined,
       });
 
       setGenerating({
@@ -617,6 +838,15 @@ export default function CyberNews() {
             setSelectedArticleData(null);
           }}
           onLearnClick={handleLearnFromNews}
+        />
+      )}
+
+      {/* Learn Options Modal */}
+      {learnOptionsArticle && (
+        <LearnOptionsModal
+          article={learnOptionsArticle}
+          onClose={() => setLearnOptionsArticle(null)}
+          onGenerate={handleGenerateWithOptions}
         />
       )}
 

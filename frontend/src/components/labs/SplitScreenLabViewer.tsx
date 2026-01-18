@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Terminal, Monitor, ChevronLeft, ChevronRight, RotateCcw,
   CheckCircle, Circle, Lightbulb, Clock, Loader2, AlertCircle,
-  Maximize2, Minimize2, BookOpen, Target
+  Maximize2, Minimize2, BookOpen, Target, ChevronDown, CheckSquare
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -41,8 +41,10 @@ interface SplitScreenLabViewerProps {
   onStartEnvironment: () => void;
   onStopEnvironment: () => void;
   onResetEnvironment: () => void;
+  onMarkComplete?: () => void;
   isStarting?: boolean;
   isStopping?: boolean;
+  isMarkingComplete?: boolean;
   error?: string;
   courseTitle?: string;
   lessonTitle?: string;
@@ -61,8 +63,10 @@ export default function SplitScreenLabViewer({
   onStartEnvironment,
   onStopEnvironment,
   onResetEnvironment,
+  onMarkComplete,
   isStarting,
   isStopping,
+  isMarkingComplete,
   error,
   courseTitle,
   lessonTitle,
@@ -77,6 +81,7 @@ export default function SplitScreenLabViewer({
   const [currentHint, setCurrentHint] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [envView, setEnvView] = useState<'terminal' | 'desktop'>('terminal');
+  const [objectivesCollapsed, setObjectivesCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -153,47 +158,98 @@ export default function SplitScreenLabViewer({
           )}
         </div>
 
-        {/* Objectives */}
-        <div className="p-4 border-b border-cyber-accent/20 bg-cyber-dark/50">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-gray-400">OBJECTIVES</h3>
+        {/* Objectives - Collapsible */}
+        <div className="border-b border-cyber-accent/20 bg-cyber-dark/50">
+          {/* Collapsible Header */}
+          <button
+            onClick={() => setObjectivesCollapsed(!objectivesCollapsed)}
+            className="w-full p-4 flex items-center justify-between hover:bg-cyber-darker/30 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <ChevronDown
+                className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${
+                  objectivesCollapsed ? '-rotate-90' : ''
+                }`}
+              />
+              <h3 className="text-sm font-medium text-gray-400">OBJECTIVES</h3>
+            </div>
             <span className="text-xs text-cyber-accent">
               {completedCount}/{totalObjectives} completed
             </span>
-          </div>
-          <div className="space-y-2">
-            {lab.objectives?.map((objective, index) => {
-              const isCompleted = completedObjectives.includes(index);
-              return (
-                <button
-                  key={index}
-                  onClick={() => !isCompleted && onObjectiveComplete(index)}
-                  className={`w-full flex items-start gap-2 p-2 rounded-lg text-left transition-colors ${
-                    isCompleted
-                      ? 'bg-green-500/10 border border-green-500/30'
-                      : 'bg-cyber-darker hover:bg-cyber-darker/70 border border-transparent'
-                  }`}
-                >
-                  {isCompleted ? (
-                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
-                  ) : (
-                    <Circle className="w-5 h-5 text-gray-500 flex-shrink-0 mt-0.5" />
-                  )}
-                  <span className={`text-sm ${isCompleted ? 'text-green-400 line-through' : 'text-gray-300'}`}>
-                    {objective}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          {/* Progress bar */}
-          <div className="mt-3 h-1.5 bg-cyber-darker rounded-full overflow-hidden">
-            <div
-              className="h-full bg-cyber-accent rounded-full transition-all"
-              style={{ width: `${progressPercent}%` }}
-            />
+          </button>
+
+          {/* Collapsible Content */}
+          <div className={`overflow-hidden transition-all duration-200 ${
+            objectivesCollapsed ? 'max-h-0' : 'max-h-[500px]'
+          }`}>
+            <div className="px-4 pb-4 space-y-2">
+              {lab.objectives?.map((objective, index) => {
+                const isCompleted = completedObjectives.includes(index);
+                return (
+                  <button
+                    key={index}
+                    onClick={() => !isCompleted && onObjectiveComplete(index)}
+                    className={`w-full flex items-start gap-2 p-2 rounded-lg text-left transition-colors ${
+                      isCompleted
+                        ? 'bg-green-500/10 border border-green-500/30'
+                        : 'bg-cyber-darker hover:bg-cyber-darker/70 border border-transparent'
+                    }`}
+                  >
+                    {isCompleted ? (
+                      <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <Circle className="w-5 h-5 text-gray-500 flex-shrink-0 mt-0.5" />
+                    )}
+                    <span className={`text-sm ${isCompleted ? 'text-green-400 line-through' : 'text-gray-300'}`}>
+                      {objective}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* Progress bar */}
+            <div className="px-4 pb-4">
+              <div className="h-1.5 bg-cyber-darker rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-cyber-accent rounded-full transition-all"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* Mark Lab Complete Button */}
+        {onMarkComplete && (
+          <div className="p-4 border-b border-cyber-accent/20">
+            <button
+              onClick={onMarkComplete}
+              disabled={isMarkingComplete}
+              className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-medium transition-colors ${
+                completedCount >= totalObjectives
+                  ? 'bg-green-600 hover:bg-green-700 text-white'
+                  : 'bg-green-600/50 hover:bg-green-600/70 text-white/80'
+              }`}
+            >
+              {isMarkingComplete ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Marking Complete...
+                </>
+              ) : (
+                <>
+                  <CheckSquare className="w-4 h-4" />
+                  Mark Lab as Complete
+                </>
+              )}
+            </button>
+            {completedCount < totalObjectives && (
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                Complete all objectives to finish this lab
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Instructions */}
         <div className="flex-1 overflow-y-auto p-4">

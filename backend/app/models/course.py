@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Enum, Integer, Boolean, Text, ForeignKey, JSON
+from sqlalchemy import Column, String, DateTime, Enum, Integer, Boolean, Text, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
@@ -353,3 +353,45 @@ class CourseGenerationJob(Base):
     @property
     def is_in_progress(self) -> bool:
         return self.current_stage not in [GenerationStage.COMPLETED, GenerationStage.FAILED, GenerationStage.QUEUED]
+
+
+# ============================================================================
+# USER PROGRESS MODELS
+# ============================================================================
+
+class UserLessonProgress(Base):
+    """
+    Tracks user progress for individual lessons.
+    Used to mark lessons as complete and track time spent.
+    """
+    __tablename__ = "user_lesson_progress"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    lesson_id = Column(UUID(as_uuid=True), ForeignKey("lessons.id"), nullable=False, index=True)
+    course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id"), nullable=False, index=True)
+
+    # Progress status
+    status = Column(String(50), default="in_progress")  # in_progress, completed
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    time_spent_minutes = Column(Integer, default=0)
+
+    # Points awarded when completed
+    points_awarded = Column(Integer, default=0)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    lesson = relationship("Lesson", foreign_keys=[lesson_id])
+    course = relationship("Course", foreign_keys=[course_id])
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'lesson_id', name='unique_user_lesson_progress'),
+    )
+
+    def __repr__(self):
+        return f"<UserLessonProgress user={self.user_id} lesson={self.lesson_id} status={self.status}>"

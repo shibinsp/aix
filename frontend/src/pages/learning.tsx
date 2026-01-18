@@ -592,10 +592,10 @@ export default function LearningPath() {
     }
   }, [hasHydrated, isAuthenticated, router]);
 
-  // Fetch recent courses
+  // Fetch recent courses created by the user
   const { data: recentCourses } = useQuery({
-    queryKey: ['recentCourses'],
-    queryFn: () => coursesApi.list({ limit: 4 }),
+    queryKey: ['myCourses'],
+    queryFn: () => coursesApi.list({ limit: 4, my_courses: true }),
     enabled: isAuthenticated,
   });
 

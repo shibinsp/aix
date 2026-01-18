@@ -19,7 +19,8 @@ from app.models.user import User
 from app.models.course import (
     Course, Module, Lesson, ContentBlock, ExternalResource,
     CourseCategory, DifficultyLevel, CourseGenerationJob,
-    GenerationStage, GenerationStatus
+    GenerationStage, GenerationStatus, UserLessonProgress,
+    ContentBlockType
 )
 from app.models.lab import Lab, LabType
 from app.schemas.course import (
@@ -42,6 +43,13 @@ class NewsLearningRequest(BaseModel):
     category: str
     severity: Optional[str] = None
     tags: List[str] = []
+    # Course generation options
+    num_modules: int = 4  # 3-8 modules
+    lesson_length: str = "medium"  # short, medium, long
+    include_code_examples: bool = True
+    include_diagrams: bool = True
+    include_quizzes: bool = True
+    difficulty_override: Optional[str] = None  # beginner, intermediate, advanced
 
 
 class NewsLearningResponse(BaseModel):
@@ -99,11 +107,19 @@ async def list_courses(
     skip: int = 0,
     limit: int = 20,
     search: Optional[str] = None,
+    my_courses: bool = Query(False, description="If true, return only courses created by the user"),
 ):
-    """List courses created by the current user."""
+    """List courses. By default shows all published courses. Use my_courses=true for user-created."""
     query = select(Course).options(
         selectinload(Course.modules).selectinload(Module.lessons)
-    ).where(Course.created_by == user_id)
+    )
+
+    if my_courses:
+        # Show only courses created by this user
+        query = query.where(Course.created_by == user_id)
+    else:
+        # Show all published courses
+        query = query.where(Course.is_published == True)
 
     if category:
         query = query.where(Course.category == category)
@@ -801,13 +817,34 @@ async def generate_learning_from_news(
 
     logger.info("Generating learning content from news", article_id=request.article_id, title=request.title)
 
-    # Determine difficulty based on severity
-    difficulty = map_severity_to_difficulty(request.severity)
+    # Determine difficulty - use override if provided, otherwise map from severity
+    difficulty = request.difficulty_override or map_severity_to_difficulty(request.severity)
     category = map_news_category_to_course(request.category)
+
+    # Validate num_modules
+    num_modules = max(3, min(8, request.num_modules))
+
+    # Map lesson length to approximate word count
+    lesson_length_guide = {
+        "short": "500-800 words per lesson",
+        "medium": "800-1200 words per lesson",
+        "long": "1200-1800 words per lesson"
+    }.get(request.lesson_length, "800-1200 words per lesson")
 
     # Generate a focused topic from the article
     topic = f"{request.title} - Understanding and Defense"
     tags_str = ", ".join(request.tags[:5]) if request.tags else request.category
+
+    # Build content options string
+    content_options = []
+    if request.include_code_examples:
+        content_options.append("Include practical code examples and commands where relevant")
+    if request.include_diagrams:
+        content_options.append("Describe diagrams/flowcharts that would help explain concepts")
+    if request.include_quizzes:
+        content_options.append("End each module with review questions or quiz items")
+
+    content_options_str = "\n".join(f"- {opt}" for opt in content_options) if content_options else "No specific content requirements"
 
     # Generate course content using AI
     course_prompt = f"""Based on this cybersecurity news, create an educational course:
@@ -817,6 +854,7 @@ SUMMARY: {request.summary}
 CATEGORY: {request.category}
 SEVERITY: {request.severity or 'Medium'}
 TAGS: {tags_str}
+DIFFICULTY LEVEL: {difficulty}
 
 Create a practical cybersecurity course that teaches students:
 1. What happened in this security incident/vulnerability
@@ -825,7 +863,13 @@ Create a practical cybersecurity course that teaches students:
 4. How to defend against similar attacks
 5. Hands-on skills to apply this knowledge
 
-Generate {4 if difficulty == "beginner" else 5} modules with 3-4 lessons each.
+COURSE REQUIREMENTS:
+- Generate exactly {num_modules} modules with 3-4 lessons each
+- Each lesson should be approximately {lesson_length_guide}
+- Difficulty level: {difficulty}
+
+CONTENT OPTIONS:
+{content_options_str}
 
 Return JSON format:
 {{
@@ -1258,3 +1302,175 @@ async def search_youtube(
     except Exception as e:
         logger.error("YouTube search failed", error=str(e))
         raise HTTPException(status_code=500, detail="YouTube search failed")
+
+
+# ============================================================================
+# LESSON PROGRESS ENDPOINTS
+# ============================================================================
+
+@router.post("/{course_id}/lessons/{lesson_id}/mark-complete")
+async def mark_lesson_complete(
+    course_id: UUID,
+    lesson_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Mark a lesson as complete and update user progress.
+
+    This endpoint:
+    - Creates or updates the user's progress for this lesson
+    - Awards points to the user
+    - Returns the updated progress status
+    """
+    # Verify course exists
+    course_result = await db.execute(select(Course).where(Course.id == course_id))
+    course = course_result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    # Verify lesson exists and belongs to this course
+    lesson_result = await db.execute(
+        select(Lesson)
+        .join(Module)
+        .where(Lesson.id == lesson_id, Module.course_id == course_id)
+    )
+    lesson = lesson_result.scalar_one_or_none()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found in this course")
+
+    # Check if progress already exists
+    progress_result = await db.execute(
+        select(UserLessonProgress).where(
+            UserLessonProgress.user_id == UUID(user_id),
+            UserLessonProgress.lesson_id == lesson_id,
+        )
+    )
+    progress = progress_result.scalar_one_or_none()
+
+    # If already completed, return early
+    if progress and progress.status == "completed":
+        return {
+            "message": "Lesson already completed",
+            "status": "completed",
+            "points_awarded": progress.points_awarded,
+        }
+
+    # Calculate points to award
+    points_to_award = lesson.points or 10
+
+    # Create or update progress
+    if not progress:
+        progress = UserLessonProgress(
+            user_id=UUID(user_id),
+            lesson_id=lesson_id,
+            course_id=course_id,
+            status="completed",
+            completed_at=datetime.utcnow(),
+            points_awarded=points_to_award,
+        )
+        db.add(progress)
+    else:
+        progress.status = "completed"
+        progress.completed_at = datetime.utcnow()
+        progress.points_awarded = points_to_award
+
+    await db.commit()
+
+    # Update user's total points
+    user = await db.get(User, UUID(user_id))
+    if user:
+        user.total_points = (user.total_points or 0) + points_to_award
+        await db.commit()
+
+    logger.info(
+        "Lesson marked complete",
+        user_id=user_id,
+        lesson_id=str(lesson_id),
+        course_id=str(course_id),
+        points_awarded=points_to_award,
+    )
+
+    return {
+        "message": "Lesson marked as complete",
+        "status": "completed",
+        "points_awarded": points_to_award,
+    }
+
+
+@router.get("/{course_id}/lessons/{lesson_id}/progress")
+async def get_lesson_progress(
+    course_id: UUID,
+    lesson_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the user's progress for a specific lesson."""
+    progress_result = await db.execute(
+        select(UserLessonProgress).where(
+            UserLessonProgress.user_id == UUID(user_id),
+            UserLessonProgress.lesson_id == lesson_id,
+        )
+    )
+    progress = progress_result.scalar_one_or_none()
+
+    if not progress:
+        return {
+            "status": "not_started",
+            "completed_at": None,
+            "points_awarded": 0,
+        }
+
+    return {
+        "status": progress.status,
+        "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
+        "points_awarded": progress.points_awarded,
+        "started_at": progress.started_at.isoformat() if progress.started_at else None,
+    }
+
+
+@router.get("/{course_id}/progress")
+async def get_course_progress(
+    course_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the user's progress for an entire course."""
+    # Get all lessons in the course
+    lessons_result = await db.execute(
+        select(Lesson)
+        .join(Module)
+        .where(Module.course_id == course_id)
+    )
+    lessons = lessons_result.scalars().all()
+    total_lessons = len(lessons)
+
+    if total_lessons == 0:
+        return {
+            "total_lessons": 0,
+            "completed_lessons": 0,
+            "progress_percent": 0,
+            "total_points_earned": 0,
+        }
+
+    # Get completed lessons for this user in this course
+    progress_result = await db.execute(
+        select(UserLessonProgress).where(
+            UserLessonProgress.user_id == UUID(user_id),
+            UserLessonProgress.course_id == course_id,
+            UserLessonProgress.status == "completed",
+        )
+    )
+    completed_progress = progress_result.scalars().all()
+    completed_lessons = len(completed_progress)
+    total_points_earned = sum(p.points_awarded for p in completed_progress)
+
+    progress_percent = int((completed_lessons / total_lessons) * 100) if total_lessons > 0 else 0
+
+    return {
+        "total_lessons": total_lessons,
+        "completed_lessons": completed_lessons,
+        "progress_percent": progress_percent,
+        "total_points_earned": total_points_earned,
+        "is_complete": completed_lessons >= total_lessons,
+    }

@@ -13,6 +13,7 @@ from app.core.security import decode_access_token
 from app.models.lab import LabSession, LabStatus
 from app.services.labs.terminal_service import TerminalService
 from app.services.labs.lab_manager import is_running_in_kubernetes
+from app.services.labs.objective_verifier import objective_verifier
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -232,10 +233,12 @@ async def websocket_terminal(
 
                 if "text" in message:
                     data = json.loads(message["text"])
-                    await handle_terminal_message(terminal, data)
+                    await handle_terminal_message(terminal, data, session_id)
                 elif "bytes" in message:
-                    # Direct binary input
-                    await terminal.write(message["bytes"].decode("utf-8", errors="replace"))
+                    # Direct binary input - also log for auto-detection
+                    binary_data = message["bytes"].decode("utf-8", errors="replace")
+                    objective_verifier.process_terminal_input(session_id, binary_data)
+                    await terminal.write(binary_data)
 
             except WebSocketDisconnect:
                 break
@@ -273,14 +276,27 @@ async def read_terminal_output(websocket: WebSocket, terminal: TerminalService):
         logger.error(f"Error reading terminal output: {e}")
 
 
-async def handle_terminal_message(terminal: TerminalService, data: dict):
-    """Handle incoming terminal messages."""
+async def handle_terminal_message(
+    terminal: TerminalService,
+    data: dict,
+    session_id: str = None,
+):
+    """Handle incoming terminal messages.
+
+    Args:
+        terminal: The terminal service to write to
+        data: Message data containing type and content
+        session_id: Lab session ID for command logging (auto-detection)
+    """
     msg_type = data.get("type", "input")
 
     if msg_type == "input":
         # Regular input
         content = data.get("data", "")
         if content:
+            # Log command for auto-detection if session_id provided
+            if session_id:
+                objective_verifier.process_terminal_input(session_id, content)
             await terminal.write(content)
 
     elif msg_type == "resize":

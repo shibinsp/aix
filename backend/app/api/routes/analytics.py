@@ -2,7 +2,7 @@
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, Integer
 from sqlalchemy.orm import selectinload
 from uuid import UUID
 from datetime import datetime, timedelta, date
@@ -16,6 +16,7 @@ from app.models.organization import (
     Organization, OrganizationMembership, Batch, BatchMembership, OrgMemberRole
 )
 from app.models.limits import UserUsageTracking
+from app.models.course import Course, Module, Lesson, UserLessonProgress
 from app.schemas.analytics import (
     UserProgressSummary, CourseProgress, LeaderboardEntry, BatchAnalytics,
     OrganizationAnalytics, UserAnalytics, ProgressReport, ActivityFeed,
@@ -46,13 +47,71 @@ async def get_my_course_progress(
     db: AsyncSession = Depends(get_db),
 ):
     """Get current user's progress in all courses."""
-    # Get user's course enrollments/progress
-    # This would integrate with actual course enrollment model
-    # For now, return based on usage tracking
-    progress_list = []
+    from sqlalchemy.orm import selectinload as load_options
 
-    # TODO: Integrate with actual course progress model
-    # This is a placeholder implementation
+    # Get all lessons the user has progress on, grouped by course
+    user_progress_result = await db.execute(
+        select(
+            UserLessonProgress.course_id,
+            func.count(UserLessonProgress.id).label('total_lessons_started'),
+            func.sum(
+                func.cast(UserLessonProgress.status == 'completed', Integer)
+            ).label('completed_lessons'),
+            func.max(UserLessonProgress.completed_at).label('last_activity')
+        )
+        .where(UserLessonProgress.user_id == current_user.id)
+        .group_by(UserLessonProgress.course_id)
+    )
+    user_progress_by_course = {
+        row.course_id: {
+            'total_started': row.total_lessons_started,
+            'completed': row.completed_lessons or 0,
+            'last_activity': row.last_activity
+        }
+        for row in user_progress_result.fetchall()
+    }
+
+    if not user_progress_by_course:
+        return []
+
+    # Get the courses with their modules and lessons
+    course_ids = list(user_progress_by_course.keys())
+    courses_result = await db.execute(
+        select(Course)
+        .options(
+            load_options(Course.modules).load_options(Module.lessons)
+        )
+        .where(Course.id.in_(course_ids))
+    )
+    courses = courses_result.scalars().unique().all()
+
+    progress_list = []
+    for course in courses:
+        # Count total lessons in the course
+        total_lessons = sum(len(module.lessons) for module in course.modules)
+
+        user_data = user_progress_by_course.get(course.id, {})
+        completed_lessons = user_data.get('completed', 0)
+        last_activity = user_data.get('last_activity')
+
+        # Calculate progress percentage
+        progress_percent = 0
+        if total_lessons > 0:
+            progress_percent = int((completed_lessons / total_lessons) * 100)
+
+        progress_list.append(CourseProgress(
+            course_id=course.id,
+            course_title=course.title,
+            progress_percent=progress_percent,
+            lessons_completed=completed_lessons,
+            total_lessons=total_lessons,
+            labs_completed=0,  # TODO: Implement lab progress tracking
+            total_labs=0,
+            last_activity=last_activity,
+        ))
+
+    # Sort by last activity (most recent first)
+    progress_list.sort(key=lambda x: x.last_activity or datetime.min, reverse=True)
 
     return progress_list
 

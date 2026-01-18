@@ -18,6 +18,7 @@ import {
   TrendingUp,
   ChevronLeft,
   ChevronRight,
+  Map,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 
@@ -32,6 +33,7 @@ const navItems = [
   { href: '/courses', icon: BookOpen, label: 'Courses' },
   { href: '/labs', icon: Terminal, label: 'Labs' },
   { href: '/environment', icon: Monitor, label: 'My Environment' },
+  { href: '/learning-path', icon: Map, label: 'Learning Path' },
   { href: '/my-progress', icon: TrendingUp, label: 'My Progress' },
   { href: '/skills', icon: Shield, label: 'Skills' },
   { href: '/news', icon: Newspaper, label: 'Cyber News' },
