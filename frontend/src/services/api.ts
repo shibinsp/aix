@@ -166,6 +166,10 @@ export const coursesApi = {
     const response = await api.post(`/courses/${courseId}/generate-labs`);
     return response.data;
   },
+  getLabGenerationStatus: async (jobId: string) => {
+    const response = await api.get(`/courses/labs/job/${jobId}/status`);
+    return response.data;
+  },
   // Lesson progress methods
   markLessonComplete: async (courseId: string, lessonId: string) => {
     const response = await api.post(`/courses/${courseId}/lessons/${lessonId}/mark-complete`);

@@ -62,11 +62,20 @@ interface Course {
   modules: Module[];
 }
 
+interface LabGenerationJob {
+  jobId: string;
+  courseId: string;
+  percentage: number;
+  currentTask: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+}
+
 export default function CourseDetail() {
   const router = useRouter();
   const { id } = router.query;
   const { isAuthenticated, hasHydrated } = useAuthStore();
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
+  const [labGenJob, setLabGenJob] = useState<LabGenerationJob | null>(null);
   const queryClient = useQueryClient();
 
   const { data: course, isLoading, error } = useQuery({
@@ -75,15 +84,107 @@ export default function CourseDetail() {
     enabled: !!id && isAuthenticated,
   });
 
+  // Check for existing job in localStorage on mount
+  useEffect(() => {
+    if (!id) return;
+    const storedJob = localStorage.getItem(`labgen_${id}`);
+    if (storedJob) {
+      try {
+        const job: LabGenerationJob = JSON.parse(storedJob);
+        if (job.status !== 'completed' && job.status !== 'failed') {
+          setLabGenJob(job);
+        } else {
+          localStorage.removeItem(`labgen_${id}`);
+        }
+      } catch (e) {
+        localStorage.removeItem(`labgen_${id}`);
+      }
+    }
+  }, [id]);
+
+  // Poll for progress
+  useEffect(() => {
+    if (!labGenJob || labGenJob.status === 'completed' || labGenJob.status === 'failed') {
+      return;
+    }
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const status = await coursesApi.getLabGenerationStatus(labGenJob.jobId);
+
+        const updatedJob: LabGenerationJob = {
+          jobId: labGenJob.jobId,
+          courseId: id as string,
+          percentage: status.percentage,
+          currentTask: status.current_task || '',
+          status: status.status,
+        };
+
+        setLabGenJob(updatedJob);
+        localStorage.setItem(`labgen_${id}`, JSON.stringify(updatedJob));
+
+        // If completed or failed, clean up
+        if (status.status === 'completed') {
+          clearInterval(pollInterval);
+          localStorage.removeItem(`labgen_${id}`);
+
+          // Show notification
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Labs Generated Successfully!', {
+              body: `${status.result?.labs_created || 0} labs have been generated for your course.`,
+              icon: '/favicon.ico',
+            });
+          }
+
+          // Refresh course data
+          queryClient.invalidateQueries({ queryKey: ['course', id] });
+        } else if (status.status === 'failed') {
+          clearInterval(pollInterval);
+          localStorage.removeItem(`labgen_${id}`);
+
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Lab Generation Failed', {
+              body: status.error_message || 'Failed to generate labs',
+              icon: '/favicon.ico',
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to poll lab generation status:', err);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [labGenJob, id, queryClient]);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   // Mutation for generating labs
   const generateLabsMutation = useMutation({
     mutationFn: () => coursesApi.generateLabs(id as string),
     onSuccess: (data) => {
-      alert(`Successfully generated ${data.labs_created} labs! Go to the Labs tab to see them.`);
-      queryClient.invalidateQueries({ queryKey: ['course', id] });
+      if (data.job_id) {
+        const job: LabGenerationJob = {
+          jobId: data.job_id,
+          courseId: id as string,
+          percentage: 0,
+          currentTask: 'Starting lab generation...',
+          status: 'pending',
+        };
+        setLabGenJob(job);
+        localStorage.setItem(`labgen_${id}`, JSON.stringify(job));
+      } else {
+        // No labs to generate
+        alert(data.message || 'No labs to generate');
+      }
     },
     onError: (err: any) => {
-      alert(`Failed to generate labs: ${err.response?.data?.detail || err.message}`);
+      alert(`Failed to start lab generation: ${err.response?.data?.detail || err.message}`);
     },
   });
 
@@ -258,23 +359,49 @@ export default function CourseDetail() {
                   )}
 
                   {/* Generate Labs Button */}
-                  <button
-                    onClick={() => generateLabsMutation.mutate()}
-                    disabled={generateLabsMutation.isPending}
-                    className="px-6 py-3 bg-purple-500/20 text-purple-400 border border-purple-500/30 font-semibold rounded-lg hover:bg-purple-500/30 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {generateLabsMutation.isPending ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        Generating Labs...
-                      </>
-                    ) : (
-                      <>
-                        <FlaskConical className="w-5 h-5" />
-                        Generate Labs
-                      </>
-                    )}
-                  </button>
+                  {labGenJob && labGenJob.status !== 'completed' && labGenJob.status !== 'failed' ? (
+                    <div className="flex-1 max-w-md">
+                      <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-purple-400">
+                            Generating Labs
+                          </span>
+                          <span className="text-sm font-bold text-purple-300">
+                            {labGenJob.percentage}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-purple-900/30 rounded-full h-2.5 mb-2">
+                          <div
+                            className="bg-purple-500 h-2.5 rounded-full transition-all duration-300"
+                            style={{ width: `${labGenJob.percentage}%` }}
+                          />
+                        </div>
+                        {labGenJob.currentTask && (
+                          <p className="text-xs text-purple-300/70 truncate">
+                            {labGenJob.currentTask}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => generateLabsMutation.mutate()}
+                      disabled={generateLabsMutation.isPending || !!labGenJob}
+                      className="px-6 py-3 bg-purple-500/20 text-purple-400 border border-purple-500/30 font-semibold rounded-lg hover:bg-purple-500/30 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {generateLabsMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Starting...
+                        </>
+                      ) : (
+                        <>
+                          <FlaskConical className="w-5 h-5" />
+                          Generate Labs
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
 

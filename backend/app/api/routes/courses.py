@@ -31,6 +31,7 @@ from app.schemas.course import (
 from app.services.ai import teaching_engine
 from app.services.ai.course_generator import course_generator
 from app.services.limits import limit_enforcer
+from app.services.progress_tracker import progress_tracker
 
 logger = structlog.get_logger()
 
@@ -1156,6 +1157,143 @@ Return JSON format:
 # GENERATE LABS FOR EXISTING COURSES
 # ============================================================================
 
+async def _generate_labs_background(
+    job_id: str,
+    course_id: UUID,
+    user_id: str,
+):
+    """Background task to generate labs with progress tracking."""
+    from app.core.database import async_session_maker
+
+    async with async_session_maker() as db:
+        try:
+            # Get course with modules and lessons
+            stmt = (
+                select(Course)
+                .options(selectinload(Course.modules).selectinload(Module.lessons))
+                .where(Course.id == course_id, Course.created_by == user_id)
+            )
+            result = await db.execute(stmt)
+            course = result.scalar_one_or_none()
+
+            if not course:
+                progress_tracker.fail_job(job_id, "Course not found")
+                return
+
+            # Find lab-type lessons without labs
+            lab_lessons = []
+            all_lessons = []
+
+            for module in course.modules:
+                for lesson in module.lessons:
+                    all_lessons.append((module, lesson))
+                    if lesson.lesson_type == "lab" and not lesson.lab_id:
+                        lab_lessons.append((module, lesson))
+
+            # If no lab-type lessons found, create labs for all lessons
+            if not lab_lessons:
+                lab_lessons = [(m, l) for m, l in all_lessons if not l.lab_id]
+
+            if not lab_lessons:
+                progress_tracker.complete_job(job_id, {
+                    "message": "All lessons already have labs",
+                    "labs_created": 0,
+                    "course_id": str(course_id)
+                })
+                return
+
+            total_labs = len(lab_lessons)
+            labs_created = 0
+
+            # Generate labs one by one with progress updates
+            for idx, (module, lesson) in enumerate(lab_lessons, 1):
+                try:
+                    progress_tracker.update_job(
+                        job_id,
+                        idx,
+                        f"Generating lab {idx}/{total_labs}: {lesson.title}"
+                    )
+
+                    # Generate lab content using AI
+                    lab_content = await course_generator._generate_lab_content(lesson, module, course)
+
+                    # Generate unique slug for lab
+                    base_slug = re.sub(r'[^\w\s-]', '', lesson.title.lower())
+                    base_slug = re.sub(r'[\s_-]+', '-', base_slug).strip('-')
+                    lab_slug = f"lab-{base_slug}"
+
+                    # Check for unique slug
+                    counter = 1
+                    check_slug = lab_slug
+                    while True:
+                        existing = await db.execute(
+                            select(Lab).where(Lab.slug == check_slug)
+                        )
+                        if not existing.scalar_one_or_none():
+                            lab_slug = check_slug
+                            break
+                        check_slug = f"{lab_slug}-{counter}"
+                        counter += 1
+
+                    # Create Lab entity
+                    lab = Lab(
+                        title=f"Lab: {lesson.title}",
+                        slug=lab_slug,
+                        description=lab_content.get("description", f"Hands-on lab for {lesson.title}"),
+                        lab_type=LabType.TUTORIAL if course.difficulty == DifficultyLevel.BEGINNER else LabType.CHALLENGE,
+                        environment_type=None,
+                        difficulty=course.difficulty.value if course.difficulty else "beginner",
+                        estimated_time=lab_content.get("estimated_time", 30),
+                        points=lesson.points * 2 if lesson.points else 20,
+                        preset=None,
+                        infrastructure_spec={},
+                        flags=lab_content.get("flags", []),
+                        objectives=lab_content.get("objectives", []),
+                        instructions=lab_content.get("instructions", ""),
+                        hints=lab_content.get("hints", []),
+                        category=course.category.value if course.category else None,
+                        tags=[course.category.value] if course.category else [],
+                        is_published=True,
+                        is_ai_generated=True,
+                        created_by=course.created_by,
+                    )
+
+                    db.add(lab)
+                    await db.flush()
+
+                    # Link lab to lesson
+                    lesson.lab_id = lab.id
+                    labs_created += 1
+
+                    logger.info(
+                        "Created lab for lesson",
+                        lab_id=str(lab.id),
+                        lesson_id=str(lesson.id),
+                        progress=f"{idx}/{total_labs}"
+                    )
+
+                except Exception as e:
+                    logger.error(
+                        "Failed to generate lab for lesson",
+                        error=str(e),
+                        lesson_id=str(lesson.id),
+                    )
+                    continue
+
+            await db.commit()
+
+            # Mark job as complete
+            progress_tracker.complete_job(job_id, {
+                "message": f"Successfully generated {labs_created} labs",
+                "labs_created": labs_created,
+                "course_id": str(course_id)
+            })
+
+        except Exception as e:
+            logger.error(f"Lab generation failed", error=str(e), job_id=job_id)
+            progress_tracker.fail_job(job_id, str(e))
+
+
 @router.post("/{course_id}/generate-labs")
 async def generate_labs_for_course(
     course_id: UUID,
@@ -1163,12 +1301,10 @@ async def generate_labs_for_course(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Generate labs for all lab-type lessons in an existing course.
-
-    This endpoint allows users to trigger lab generation for courses
-    that were created without labs or need labs regenerated.
+    Start lab generation for a course.
+    Returns a job ID to track progress.
     """
-    # Get course with modules and lessons
+    # Verify course exists and user has access
     stmt = (
         select(Course)
         .options(selectinload(Course.modules).selectinload(Module.lessons))
@@ -1180,40 +1316,47 @@ async def generate_labs_for_course(
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    # Find lab-type lessons without labs, or all lessons if no lab-type lessons exist
-    lab_lessons = []
-    all_lessons = []
-
+    # Count lessons that need labs
+    lab_lessons_count = 0
     for module in course.modules:
         for lesson in module.lessons:
-            all_lessons.append((module, lesson))
-            # Check for lab-type lessons without assigned labs
-            if lesson.lesson_type == "lab" and not lesson.lab_id:
-                lab_lessons.append((module, lesson))
+            if (lesson.lesson_type == "lab" and not lesson.lab_id) or not lesson.lab_id:
+                lab_lessons_count += 1
 
-    # If no lab-type lessons found, create labs for all lessons
-    if not lab_lessons:
-        lab_lessons = [(m, l) for m, l in all_lessons if not l.lab_id]
-
-    if not lab_lessons:
-        return {"message": "All lessons already have labs", "labs_created": 0}
-
-    logger.info(f"Generating labs for {len(lab_lessons)} lessons in course {course_id}")
-
-    # Generate labs using the course generator
-    try:
-        labs_created = await course_generator.generate_labs_for_existing_course(
-            course, lab_lessons, db
-        )
-
+    if lab_lessons_count == 0:
         return {
-            "message": f"Successfully generated {labs_created} labs",
-            "labs_created": labs_created,
-            "course_id": str(course_id)
+            "job_id": None,
+            "message": "All lessons already have labs",
+            "labs_to_generate": 0
         }
-    except Exception as e:
-        logger.error(f"Failed to generate labs for course {course_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate labs: {str(e)}")
+
+    # Create progress tracking job
+    job_id = progress_tracker.create_job(
+        total_steps=lab_lessons_count,
+        description=f"Generating labs for course: {course.title}"
+    )
+
+    # Start background task
+    asyncio.create_task(_generate_labs_background(job_id, course_id, user_id))
+
+    logger.info(f"Started lab generation job {job_id} for course {course_id}")
+
+    return {
+        "job_id": job_id,
+        "message": "Lab generation started",
+        "labs_to_generate": lab_lessons_count
+    }
+
+
+@router.get("/labs/job/{job_id}/status")
+async def get_lab_generation_status(job_id: str):
+    """Get the status of a lab generation job."""
+    job = progress_tracker.get_job(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return job.to_dict()
 
 
 # ============================================================================
