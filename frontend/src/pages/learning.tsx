@@ -512,6 +512,7 @@ export default function LearningPath() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [progressViewMode, setProgressViewMode] = useState<'minimized' | 'expanded'>('minimized');
   const [generationOptions, setGenerationOptions] = useState<GenerationOptions>({
     includeCodeExamples: true,
     includeDiagrams: true,
@@ -521,6 +522,26 @@ export default function LearningPath() {
     numModules: 5,
     targetLessonLength: 2000,
   });
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Load saved view mode preference
+  useEffect(() => {
+    const savedMode = localStorage.getItem('courseProgressViewMode');
+    if (savedMode === 'minimized' || savedMode === 'expanded') {
+      setProgressViewMode(savedMode);
+    }
+  }, []);
+
+  // Save view mode preference when it changes
+  useEffect(() => {
+    localStorage.setItem('courseProgressViewMode', progressViewMode);
+  }, [progressViewMode]);
 
   // Poll for generation status
   useEffect(() => {
@@ -550,6 +571,14 @@ export default function LearningPath() {
               courseSlug: status.course_id,
             },
           }));
+
+          // Show browser notification
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Course Generated Successfully!', {
+              body: `Your course "${courseGeneration.topic || 'course'}" is ready to view.`,
+              icon: '/favicon.ico',
+            });
+          }
         } else if (status.current_stage === 'FAILED') {
           clearInterval(pollInterval);
           setCourseGeneration((prev) => ({
@@ -557,6 +586,14 @@ export default function LearningPath() {
             isGenerating: false,
             error: status.error_message || 'Generation failed',
           }));
+
+          // Show browser notification for failure
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Course Generation Failed', {
+              body: status.error_message || 'Failed to generate course',
+              icon: '/favicon.ico',
+            });
+          }
         }
       } catch (err) {
         console.error('Failed to poll status:', err);
@@ -564,7 +601,7 @@ export default function LearningPath() {
     }, 2000);
 
     return () => clearInterval(pollInterval);
-  }, [courseGeneration.jobId, courseGeneration.isGenerating]);
+  }, [courseGeneration.jobId, courseGeneration.isGenerating, courseGeneration.topic]);
 
   const getStageMessage = (stage: string): string => {
     const messages: Record<string, string> = {
@@ -706,52 +743,19 @@ export default function LearningPath() {
   return (
     <div className="p-8 max-w-7xl mx-auto">
       {/* Generating Overlay with Progress - Minimizable */}
-      {courseGeneration.isGenerating && (
-        isMinimized ? (
-          // Minimized floating indicator (bottom-right corner)
-          <div className="fixed bottom-4 right-4 z-50">
+      {courseGeneration.isGenerating && progressViewMode === 'expanded' && (
+        // Full modal with minimize button
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-cyber-dark rounded-2xl border border-cyber-accent/30 p-8 max-w-lg text-center relative">
+            {/* Minimize button */}
             <button
-              onClick={() => setIsMinimized(false)}
-              className="bg-cyber-dark border border-cyber-accent/30 rounded-xl p-4 shadow-lg hover:border-cyber-accent/50 transition-all group"
+              onClick={() => setProgressViewMode('minimized')}
+              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+              title="Minimize"
+              aria-label="Minimize to inline view"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 relative">
-                  {/* Mini circular progress */}
-                  <svg className="w-12 h-12 -rotate-90">
-                    <circle cx="24" cy="24" r="20" fill="none" stroke="rgba(0,255,159,0.2)" strokeWidth="4"/>
-                    <circle
-                      cx="24" cy="24" r="20" fill="none" stroke="#00ff9f" strokeWidth="4"
-                      strokeLinecap="round"
-                      strokeDasharray={`${(courseGeneration.progress?.percent || 0) * 1.26} 126`}
-                      className="transition-all duration-500"
-                    />
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-cyber-accent">
-                    {Math.round(courseGeneration.progress?.percent || 0)}%
-                  </span>
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-medium text-white">Generating Course</p>
-                  <p className="text-xs text-gray-400 truncate max-w-[150px]">
-                    {courseGeneration.progress?.message || 'Processing...'}
-                  </p>
-                </div>
-                <Maximize2 className="w-4 h-4 text-gray-400 group-hover:text-cyber-accent transition-colors ml-2" />
-              </div>
+              <Minimize2 className="w-5 h-5" />
             </button>
-          </div>
-        ) : (
-          // Full modal with minimize button
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-            <div className="bg-cyber-dark rounded-2xl border border-cyber-accent/30 p-8 max-w-lg text-center relative">
-              {/* Minimize button */}
-              <button
-                onClick={() => setIsMinimized(true)}
-                className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                title="Minimize to continue browsing"
-              >
-                <Minimize2 className="w-5 h-5" />
-              </button>
 
               <div className="relative w-20 h-20 mx-auto mb-6">
                 <svg className="w-20 h-20 -rotate-90">
@@ -834,7 +838,6 @@ export default function LearningPath() {
               </p>
             </div>
           </div>
-        )
       )}
 
       {/* Success Toast */}
@@ -936,23 +939,16 @@ export default function LearningPath() {
           </button>
 
           {/* Generate Button */}
-          <button
-            onClick={() => handleGenerateCourse(true)}
-            disabled={!courseTopic.trim() || courseGeneration.isGenerating}
-            className="flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold rounded-xl hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 whitespace-nowrap"
-          >
-            {courseGeneration.isGenerating ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Zap className="w-5 h-5" />
-                Generate Course
-              </>
-            )}
-          </button>
+          {!courseGeneration.isGenerating && (
+            <button
+              onClick={() => handleGenerateCourse(true)}
+              disabled={!courseTopic.trim()}
+              className="flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold rounded-xl hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 whitespace-nowrap"
+            >
+              <Zap className="w-5 h-5" />
+              Generate Course
+            </button>
+          )}
         </div>
 
         {/* Advanced Options Panel */}
@@ -1045,6 +1041,57 @@ export default function LearningPath() {
           </div>
         )}
       </div>
+
+      {/* Inline Progress Indicator - Minimized View */}
+      {courseGeneration.isGenerating && progressViewMode === 'minimized' && (
+        <div className="mb-8">
+          <div className="bg-cyber-accent/10 border border-cyber-accent/30 rounded-xl p-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <Loader2 className="w-6 h-6 text-cyber-accent animate-spin" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">
+                    Generating Course
+                  </h3>
+                  <p className="text-sm text-gray-400">
+                    {courseGeneration.progress?.message || 'Processing...'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-2xl font-bold text-cyber-accent">
+                  {Math.round(courseGeneration.progress?.percent || 0)}%
+                </span>
+                <button
+                  onClick={() => setProgressViewMode('expanded')}
+                  className="p-2 text-gray-400 hover:text-cyber-accent hover:bg-cyber-accent/10 rounded-lg transition-colors"
+                  title="View details"
+                  aria-label="Expand to full view"
+                >
+                  <Maximize2 className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full bg-cyber-dark rounded-full h-3 overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-cyber-accent to-cyan-400 h-3 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${courseGeneration.progress?.percent || 0}%` }}
+              />
+            </div>
+
+            {/* Current Lesson Info */}
+            {courseGeneration.progress?.currentLesson && (
+              <p className="text-xs text-gray-500 mt-2 truncate">
+                {courseGeneration.progress.currentLesson}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Search and Filter */}
       <div className="flex flex-wrap gap-4 mb-6">
