@@ -374,7 +374,7 @@ async def get_organization_user_progress(
             total_learning_hours=terminal_hours + desktop_hours,
             terminal_hours=terminal_hours,
             desktop_hours=desktop_hours,
-            last_activity=tracking.last_updated if tracking else None,
+            last_activity=tracking.updated_at if tracking else None,
             joined_at=member.joined_at or user.created_at,
         ))
 
@@ -696,5 +696,5 @@ async def _build_user_analytics(user_id: UUID, db: AsyncSession) -> UserAnalytic
         activity_by_day=[],
         skills_acquired=[],
         days_active_this_month=0,
-        last_activity=tracking.last_updated if tracking else None,
+        last_activity=tracking.updated_at if tracking else None,
     )

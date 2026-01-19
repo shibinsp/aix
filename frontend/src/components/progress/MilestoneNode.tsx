@@ -142,9 +142,17 @@ export default function MilestoneNode({
 
       {/* Inner content */}
       {milestone.status === 'locked' ? (
-        <Lock className="w-6 h-6 text-gray-500" x={-12} y={-12} />
+        <foreignObject x={-12} y={-12} width={24} height={24}>
+          <div className="flex items-center justify-center w-full h-full">
+            <Lock className="w-6 h-6 text-gray-500" />
+          </div>
+        </foreignObject>
       ) : milestone.status === 'completed' ? (
-        <Check className="w-7 h-7 text-white" x={-14} y={-14} strokeWidth={3} />
+        <foreignObject x={-14} y={-14} width={28} height={28}>
+          <div className="flex items-center justify-center w-full h-full">
+            <Check className="w-7 h-7 text-white" strokeWidth={3} />
+          </div>
+        </foreignObject>
       ) : (
         <foreignObject x={-14} y={-14} width={28} height={28}>
           <div className="flex items-center justify-center w-full h-full">

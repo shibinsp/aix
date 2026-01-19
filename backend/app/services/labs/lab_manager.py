@@ -582,10 +582,13 @@ class LabManager:
                 f"{novnc_port}:6901",  # noVNC web access
                 f"{vnc_port}:5901",     # VNC port
             ]
+            # Generate secure random VNC password
+            import secrets
+            vnc_password = secrets.token_urlsafe(12)
             environment = {
                 "LAB_SESSION_ID": session_id,
                 "LAB_PRESET": preset,
-                "VNC_PW": "toor",
+                "VNC_PW": vnc_password,
                 "VNC_RESOLUTION": "1280x720",
             }
             memory = config.get("memory", "2g")
@@ -633,6 +636,7 @@ class LabManager:
             result["vnc_url"] = f"http://{settings.SERVER_HOST}:{novnc_port}"
             result["vnc_port"] = vnc_port
             result["novnc_port"] = novnc_port
+            result["vnc_password"] = vnc_password  # Return the generated password
 
         result["ssh_port"] = ssh_port
         result["preset"] = preset

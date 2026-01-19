@@ -289,6 +289,10 @@ export const usersApi = {
     const response = await api.get('/users/me/stats');
     return response.data;
   },
+  changePassword: async (data: { current_password: string; new_password: string }) => {
+    const response = await api.post('/users/me/password', data);
+    return response.data;
+  },
 };
 
 // VM API (Alphha Linux)

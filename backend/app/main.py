@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
@@ -54,7 +55,6 @@ async def lifespan(app: FastAPI):
         session_ids = list(lab_manager.active_sessions.keys())
 
         # Cleanup with timeout to prevent hanging
-        import asyncio
         cleanup_timeout = 30  # seconds
 
         async def cleanup_with_timeout():
@@ -97,13 +97,13 @@ app.add_middleware(SecurityHeadersMiddleware)
 if settings.FORCE_HTTPS:
     app.add_middleware(HTTPSRedirectMiddleware)
 
-# CORS middleware
+# CORS middleware - restricted to specific methods and headers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Accept"],
 )
 
 # Include routers
@@ -129,23 +129,15 @@ app.include_router(terminal_ws.router, prefix="/ws", tags=["WebSocket Terminal"]
 
 @app.get("/")
 async def root():
-    """Root endpoint - health check."""
+    """Root endpoint - basic health check."""
     return {
-        "name": settings.APP_NAME,
-        "version": settings.APP_VERSION,
         "status": "running",
-        "docs": "/docs",
     }
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint - minimal info for load balancers."""
     return {
         "status": "healthy",
-        "services": {
-            "database": "connected",
-            "knowledge_base": knowledge_base.knowledge_base.get_stats(),
-            "active_labs": len(lab_manager.active_sessions),
-        },
     }

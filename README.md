@@ -2,6 +2,42 @@
 
 An autonomous, AI-powered cybersecurity education platform that teaches students without human tutors, generates personalized learning paths, creates custom labs on-demand, and adapts to individual skill levels.
 
+## 🚀 Quick Links
+
+- **Production**: [https://cyyberaix.in](https://cyyberaix.in)
+- **Local Dev**: http://localhost:3000
+- **API Docs**: http://localhost:8000/docs (local) | https://cyyberaix.in/api/v1/docs (prod)
+- **Admin Login**: `admin@cyberx.com` / `admin123`
+
+## ✅ Current Status (Updated: 2026-01-19)
+
+Both development and production deployments are **fully operational**:
+
+- ✅ **Local Docker Compose**: All services running, API endpoints working
+- ✅ **Production Kubernetes**: 5 backend + 2 frontend replicas, database migrated to v005
+- ✅ **Database**: PostgreSQL with soft delete support (migration 005_soft_delete)
+- ✅ **Fixed**: All 500 errors resolved (courses, labs, course generation endpoints)
+- ✅ **SSL**: Let's Encrypt TLS enabled on production
+
+## 📋 Recent Updates
+
+### 2026-01-19 - Critical Bug Fixes
+**Issues Resolved:**
+1. **Docker Compose Configuration** - Fixed frontend API URL from production domain to `http://localhost:8000`
+2. **Database Schema Mismatch** - Applied migration 005 adding soft delete columns (`is_deleted`, `deleted_at`, `deleted_by`)
+3. **500 Errors** - Fixed courses, labs, and course generation API endpoints
+4. **Kubernetes Deployment** - Rolled out backend pods with database migration
+
+**Database Changes:**
+- Added soft delete support to `courses` and `labs` tables
+- Added `course_id` foreign key to `labs` table for cascade relationships
+- Added indexes on `is_deleted` columns for performance
+- Migration version: `005_soft_delete` ✅
+
+**Deployments Updated:**
+- **Docker Compose**: Frontend rebuilt with correct API configuration
+- **Kubernetes**: All 5 backend pods restarted after migration
+
 ## Features
 
 ### Core Learning
@@ -79,8 +115,8 @@ An autonomous, AI-powered cybersecurity education platform that teaches students
 git clone https://github.com/yourusername/AI_CyberX.git
 cd AI_CyberX
 
-# Copy environment template
-cp .env.example .env
+# Copy environment template from infrastructure/docker
+cp infrastructure/docker/.env.example .env
 
 # Edit configuration
 nano .env
@@ -104,41 +140,104 @@ GEMINI_API_KEY=...
 # Server
 SERVER_HOST=localhost
 CORS_ORIGINS=["http://localhost:3000"]
+DEFAULT_AI_MODEL=mistral-large-latest
 ```
 
 ### 3. Start the Platform
 
 ```bash
-# Using Docker Compose
-cd infrastructure/docker
-docker-compose up -d
-
-# Or use the quick start script
+# Option 1: Using the startup script (recommended)
 chmod +x start.sh
 ./start.sh
+
+# Option 2: Using Docker Compose directly
+docker compose up -d
+
+# Check service status
+docker compose ps
 ```
 
 ### 4. Access the Platform
 
-| Service | URL |
-|---------|-----|
-| Frontend | http://localhost:3000 |
-| Backend API | http://localhost:8000 |
-| API Docs | http://localhost:8000/docs |
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| **Frontend** | http://localhost:3000 | admin@cyberx.com / admin123 |
+| **Backend API** | http://localhost:8000 | - |
+| **API Docs** | http://localhost:8000/docs | Interactive Swagger UI |
+| **Health Check** | http://localhost:8000/health | System status |
 
-### 5. Create Admin User
+> **Note**: Admin user is automatically created on first startup. Use credentials above to login.
+
+### 5. Verify Installation
 
 ```bash
-# Connect to backend container
-docker exec -it cyberx-backend bash
+# Check all services are running
+docker compose ps
 
-# Create super admin
-python -m app.cli create-admin --email admin@example.com --password <password>
+# View backend logs
+docker logs cyberx-backend
+
+# View frontend logs
+docker logs cyberx-frontend
+
+# Test API health
+curl http://localhost:8000/health
 ```
 
 ## Production Deployment
 
-### With Nginx + SSL
+### Option 1: Kubernetes (Recommended for Production)
+
+The platform is production-ready on Kubernetes with high availability:
+
+```bash
+# Prerequisites
+# - Kubernetes cluster (k3s, EKS, GKE, AKS, etc.)
+# - kubectl configured
+# - cert-manager installed for SSL
+
+# 1. Create namespace
+kubectl create namespace cyberaix-system
+kubectl create namespace cyberaix-data
+
+# 2. Configure secrets
+kubectl create secret generic api-secrets -n cyberaix-system \
+  --from-literal=SECRET_KEY=<your-secret-key> \
+  --from-literal=OPENAI_API_KEY=<your-key> \
+  --from-literal=MISTRAL_API_KEY=<your-key>
+
+kubectl create secret generic db-secrets -n cyberaix-data \
+  --from-literal=POSTGRES_USER=cyberx \
+  --from-literal=POSTGRES_PASSWORD=<your-password> \
+  --from-literal=POSTGRES_DB=cyberx
+
+# 3. Deploy database
+kubectl apply -f kubernetes/database/
+
+# 4. Deploy application
+kubectl apply -f kubernetes/backend/
+kubectl apply -f kubernetes/frontend/
+kubectl apply -f kubernetes/ingress/
+
+# 5. Apply database migrations
+kubectl exec -n cyberaix-system deployment/backend -- alembic upgrade head
+
+# 6. Check deployment status
+kubectl get pods -n cyberaix-system
+kubectl get ingress -n cyberaix-system
+```
+
+**Current Production Setup**:
+- **Domain**: https://cyyberaix.in
+- **Backend**: 5 replicas with horizontal pod autoscaling
+- **Frontend**: 2 replicas with horizontal pod autoscaling
+- **Database**: StatefulSet with persistent storage
+- **Ingress**: Traefik with Let's Encrypt TLS
+- **Monitoring**: Built-in health checks and readiness probes
+
+### Option 2: Docker Compose with Nginx + SSL
+
+For simpler production deployments:
 
 ```bash
 cd infrastructure/docker
@@ -148,18 +247,21 @@ cp .env.example .env.production
 nano .env.production  # Set production values
 
 # Start with production compose
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ### Production Checklist
 
-- [ ] Set `DEBUG=false`
-- [ ] Use strong `SECRET_KEY` and `POSTGRES_PASSWORD`
-- [ ] Configure proper `CORS_ORIGINS` for your domain
-- [ ] Set up SSL certificates (Certbot included)
+- [x] Set `DEBUG=false`
+- [x] Use strong `SECRET_KEY` and `POSTGRES_PASSWORD`
+- [x] Configure proper `CORS_ORIGINS` for your domain
+- [x] Set up SSL certificates (cert-manager/Certbot)
+- [x] Apply all database migrations
 - [ ] Configure firewall rules
 - [ ] Set up backup for PostgreSQL data
-- [ ] Configure rate limiting
+- [x] Configure rate limiting (60/min general, 10/min auth)
+- [x] Enable audit logging
+- [ ] Configure monitoring and alerting
 
 ## Project Structure
 
@@ -369,19 +471,65 @@ npm run dev
 ```
 
 ### Database Migrations
+
 ```bash
 cd backend
 
-# Create migration
+# Check current migration version
+alembic current
+
+# View migration history
+alembic history
+
+# Create new migration
 alembic revision --autogenerate -m "description"
 
-# Apply migrations
+# Apply all pending migrations
 alembic upgrade head
+
+# Apply specific migration
+alembic upgrade <revision>
+
+# Rollback to previous migration
+alembic downgrade -1
+
+# Rollback to specific migration
+alembic downgrade <revision>
+```
+
+**Current Migration Version**: `005_soft_delete`
+
+**Migration History**:
+1. `001_admin_system` - Initial schema with user roles and permissions
+2. `002_organization_system` - Multi-tenant organizations and batches
+3. `003_lab_course_integration` - Lab and course models
+4. `004_user_lesson_progress` - Progress tracking
+5. `005_soft_delete` - Soft delete support + course-lab linking ✅
+
+**Important**: Always apply migrations in both development and production:
+```bash
+# Docker Compose
+docker exec cyberx-backend alembic upgrade head
+
+# Kubernetes
+kubectl exec -n cyberaix-system deployment/backend -- alembic upgrade head
 ```
 
 ## Troubleshooting
 
 ### Common Issues
+
+**500 Errors on API Endpoints (Fixed)**
+
+If you encounter errors like `"column courses.is_deleted does not exist"`:
+
+```bash
+# For Docker Compose
+docker exec cyberx-backend alembic upgrade head
+
+# For Kubernetes
+kubectl exec -n cyberaix-system deployment/backend -- alembic upgrade head
+```
 
 **Container won't start**
 ```bash
@@ -389,23 +537,100 @@ alembic upgrade head
 docker logs cyberx-backend
 docker logs cyberx-frontend
 
+# Check service status
+docker compose ps
+
 # Rebuild images
-docker-compose build --no-cache
+docker compose build --no-cache
+docker compose up -d
 ```
 
 **Database connection error**
 ```bash
 # Check PostgreSQL is running
-docker exec -it cyberx-postgres pg_isready
+docker exec cyberx-postgres pg_isready
 
-# Reset database
-docker-compose down -v
-docker-compose up -d
+# Check database version
+docker exec cyberx-postgres psql -U cyberx -d cyberx -c "SELECT version_num FROM alembic_version;"
+
+# Reset database (WARNING: Deletes all data)
+docker compose down -v
+docker compose up -d
+```
+
+**Frontend API connection issues**
+
+If the frontend shows network errors:
+```bash
+# Check frontend API URL configuration
+docker exec cyberx-frontend env | grep NEXT_PUBLIC_API_URL
+
+# Should be: http://localhost:8000 for local dev
+# Should be: https://your-domain.com for production
+
+# If incorrect, rebuild frontend:
+docker compose stop frontend
+docker compose rm -f frontend
+docker compose build frontend
+docker compose up -d frontend
 ```
 
 **Frontend hydration errors**
 - Ensure `hasHydrated` check is in place for auth-dependent components
 - Check browser console for specific error messages
+- Clear browser localStorage: `localStorage.clear()`
+
+**Kubernetes Pod CrashLoopBackOff**
+```bash
+# Check pod logs
+kubectl logs -n cyberaix-system deployment/backend
+
+# Check pod events
+kubectl describe pod -n cyberaix-system <pod-name>
+
+# Verify database migrations
+kubectl exec -n cyberaix-system deployment/backend -- alembic current
+
+# Apply missing migrations
+kubectl exec -n cyberaix-system deployment/backend -- alembic upgrade head
+```
+
+**Admin user not found**
+```bash
+# Docker Compose: Create admin user manually
+docker exec cyberx-backend python -c "
+import asyncio
+from app.core.database import async_session_maker
+from app.models.user import User
+from app.models.admin import UserRole
+from app.core.security import get_password_hash
+from sqlalchemy import select
+
+async def create_admin():
+    async with async_session_maker() as db:
+        result = await db.execute(select(User).where(User.email == 'admin@cyberx.com'))
+        if result.scalar_one_or_none():
+            print('Admin user already exists')
+            return
+        admin = User(
+            email='admin@cyberx.com',
+            username='admin',
+            full_name='Admin User',
+            hashed_password=get_password_hash('admin123'),
+            role=UserRole.ADMIN,
+            is_active=True,
+            is_verified=True
+        )
+        db.add(admin)
+        await db.commit()
+        print('Admin user created')
+
+asyncio.run(create_admin())
+"
+
+# Kubernetes: Similar but use kubectl exec
+kubectl exec -n cyberaix-system deployment/backend -- python -c "..."
+```
 
 ## Contributing
 
@@ -424,3 +649,41 @@ MIT License - See LICENSE file for details.
 - **Issues**: Open an issue on GitHub
 - **API Docs**: Visit `/docs` endpoint for Swagger UI
 - **Health Check**: GET `/health` for system status
+- **Production Site**: https://cyyberaix.in
+
+## Changelog
+
+### Version 1.0.1 (2026-01-19)
+**Fixed:**
+- Database schema mismatch causing 500 errors on courses/labs endpoints
+- Docker Compose frontend API URL configuration for local development
+- Applied migration 005_soft_delete to production Kubernetes cluster
+
+**Added:**
+- Soft delete support for courses and labs tables
+- Course-lab cascade relationship via course_id foreign key
+- Comprehensive troubleshooting documentation
+- Kubernetes deployment instructions
+
+**Changed:**
+- Updated README with current deployment status
+- Enhanced database migration documentation
+- Improved error handling in API responses
+
+### Version 1.0.0 (2026-01-17)
+**Initial Release:**
+- AI-powered cybersecurity learning platform
+- Multi-model LLM support (OpenAI, Anthropic, Mistral, Gemini)
+- Docker/Kubernetes-based lab environments
+- Multi-tenant organization support
+- RAG knowledge base with ChromaDB
+- Full RBAC with 60+ permissions
+- Kubernetes production deployment
+
+## Deployment Environments
+
+| Environment | Status | URL | Resources |
+|-------------|--------|-----|-----------|
+| **Production (K8s)** | ✅ Live | https://cyyberaix.in | 5 backend + 2 frontend pods |
+| **Development (Docker)** | ✅ Ready | http://localhost:3000 | 1 backend + 1 frontend |
+| **Database** | ✅ Healthy | PostgreSQL 15 | Migration v005 |

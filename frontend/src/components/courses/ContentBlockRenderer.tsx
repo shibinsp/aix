@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import DOMPurify from 'dompurify';
 import {
   Copy,
   Check,
@@ -326,7 +327,8 @@ function DiagramBlock({
         });
 
         const { svg } = await mermaid.render(`diagram-${Date.now()}-${isFullscreen ? 'fs' : 'normal'}`, content);
-        targetRef.current.innerHTML = svg;
+        // Sanitize SVG to prevent XSS attacks
+        targetRef.current.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
         setError(null);
       } catch (err: any) {
         console.error('Mermaid render error:', err);

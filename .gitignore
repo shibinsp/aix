@@ -11,7 +11,16 @@ build/
 .venv/
 venv/
 env/
+
+# Environment files with secrets - NEVER commit these
 .env
+.env.local
+.env.*.local
+*.env
+backend/.env
+frontend/.env
+infrastructure/docker/.env
+infrastructure/podman/.env
 
 # Node.js
 node_modules/
@@ -49,3 +58,6 @@ htmlcov/
 # Build
 *.egg
 *.whl
+
+# IDE directories
+.opencode/

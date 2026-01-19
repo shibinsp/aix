@@ -127,6 +127,7 @@ async def list_categories():
 @router.get("/generate/{job_id}/status", response_model=CourseGenerationJobResponse)
 async def get_generation_status(
     job_id: UUID,
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the status of a course generation job."""
@@ -134,6 +135,10 @@ async def get_generation_status(
 
     if not job:
         raise HTTPException(status_code=404, detail="Generation job not found")
+
+    # Verify the job belongs to the requesting user
+    if str(job.user_id) != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     return CourseGenerationJobResponse.model_validate(job)
 
@@ -568,6 +573,10 @@ async def regenerate_lesson(
     if not job:
         raise HTTPException(status_code=404, detail="Generation job not found")
 
+    # Verify the job belongs to the requesting user
+    if str(job.user_id) != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     stmt = (
         select(Lesson)
         .options(selectinload(Lesson.module))
@@ -659,6 +668,10 @@ async def publish_course(
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
+    # Verify the user owns this course
+    if str(course.created_by) != user_id:
+        raise HTTPException(status_code=403, detail="You can only publish your own courses")
+
     course.is_published = True
     await db.commit()
 
@@ -677,6 +690,10 @@ async def delete_course(
 
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
+
+    # Verify the user owns this course
+    if str(course.created_by) != user_id:
+        raise HTTPException(status_code=403, detail="You can only delete your own courses")
 
     await db.delete(course)
     await db.commit()

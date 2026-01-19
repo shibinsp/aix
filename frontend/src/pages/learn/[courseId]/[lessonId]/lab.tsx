@@ -55,6 +55,7 @@ export default function LabLessonPage() {
   }, [hasHydrated, isAuthenticated, router]);
 
   // Start lab session query
+  // Note: This query starts a new lab session - disable refetching to prevent re-starting
   const { data: labSession, isLoading: isLoadingSession, error: sessionError } = useQuery({
     queryKey: ['lab-session', courseId, lessonId, labId],
     queryFn: async () => {
@@ -68,6 +69,9 @@ export default function LabLessonPage() {
     },
     enabled: isAuthenticated && !!courseId && !!lessonId && !!labId,
     refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    staleTime: Infinity,
     retry: 1,
   });
 

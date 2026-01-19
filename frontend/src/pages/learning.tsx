@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -544,6 +544,12 @@ export default function LearningPath() {
   }, [progressViewMode]);
 
   // Poll for generation status
+  // Using a ref to track the topic to avoid stale closure issues
+  const topicRef = useRef(courseGeneration.topic);
+  useEffect(() => {
+    topicRef.current = courseGeneration.topic;
+  }, [courseGeneration.topic]);
+
   useEffect(() => {
     if (!courseGeneration.jobId || !courseGeneration.isGenerating) return;
 
@@ -572,10 +578,10 @@ export default function LearningPath() {
             },
           }));
 
-          // Show browser notification
+          // Show browser notification - use ref to get current topic value
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('Course Generated Successfully!', {
-              body: `Your course "${courseGeneration.topic || 'course'}" is ready to view.`,
+              body: `Your course "${topicRef.current || 'course'}" is ready to view.`,
               icon: '/favicon.ico',
             });
           }
@@ -601,7 +607,7 @@ export default function LearningPath() {
     }, 2000);
 
     return () => clearInterval(pollInterval);
-  }, [courseGeneration.jobId, courseGeneration.isGenerating, courseGeneration.topic]);
+  }, [courseGeneration.jobId, courseGeneration.isGenerating]);
 
   const getStageMessage = (stage: string): string => {
     const messages: Record<string, string> = {

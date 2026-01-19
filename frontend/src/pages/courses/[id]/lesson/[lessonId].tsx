@@ -243,14 +243,16 @@ export default function LessonViewer() {
     stopLabMutation.mutate();
   }, [stopLabMutation]);
 
-  const handleResetEnvironment = useCallback(() => {
-    // Stop then restart
-    if (labSession) {
-      stopLabMutation.mutate();
+  const handleResetEnvironment = useCallback(async () => {
+    // Stop then restart - properly await stop before starting
+    try {
+      if (labSession) {
+        await stopLabMutation.mutateAsync();
+      }
+      await startLabMutation.mutateAsync();
+    } catch (error: any) {
+      setLabError(error?.response?.data?.detail || 'Failed to reset environment');
     }
-    setTimeout(() => {
-      startLabMutation.mutate();
-    }, 1000);
   }, [labSession, stopLabMutation, startLabMutation]);
 
   const handleObjectiveComplete = useCallback((index: number) => {

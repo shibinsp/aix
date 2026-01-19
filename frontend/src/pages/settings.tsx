@@ -1,9 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { useMutation } from '@tanstack/react-query';
 import { Settings, User, Lock, Save, Loader2, Check, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { usersApi } from '@/services/api';
+
+interface PasswordChangeData {
+  current_password: string;
+  new_password: string;
+}
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -44,12 +49,27 @@ export default function SettingsPage() {
     },
   });
 
+  const changePasswordMutation = useMutation({
+    mutationFn: (data: PasswordChangeData) => usersApi.changePassword(data),
+    onSuccess: () => {
+      setPasswordSuccess(true);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setPasswordSuccess(false), 3000);
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.detail || 'Failed to change password. Please try again.';
+      setPasswordError(message);
+    },
+  });
+
   const handleProfileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     updateProfileMutation.mutate({ full_name: fullName, bio });
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError('');
     setPasswordSuccess(false);
@@ -67,14 +87,11 @@ export default function SettingsPage() {
       return;
     }
 
-    // Note: Backend password change endpoint would be called here
-    // For now, just show success
-    setPasswordSuccess(true);
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setTimeout(() => setPasswordSuccess(false), 3000);
-  };
+    changePasswordMutation.mutate({
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+  }, [currentPassword, newPassword, confirmPassword, changePasswordMutation]);
 
   // Show loading until hydrated
   if (!hasHydrated) {
@@ -265,11 +282,15 @@ export default function SettingsPage() {
             <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={!currentPassword || !newPassword || !confirmPassword}
+                disabled={!currentPassword || !newPassword || !confirmPassword || changePasswordMutation.isPending}
                 className="flex items-center gap-2 px-6 py-3 bg-cyber-accent text-cyber-dark rounded-lg hover:bg-cyber-accent/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Lock className="w-4 h-4" />
-                Update Password
+                {changePasswordMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Lock className="w-4 h-4" />
+                )}
+                {changePasswordMutation.isPending ? 'Updating...' : 'Update Password'}
               </button>
             </div>
           </form>

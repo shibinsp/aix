@@ -121,7 +121,11 @@ export default function BoardGamePath({
           className="fill-cyber-dark stroke-cyber-accent stroke-2"
           filter="url(#glow-green)"
         />
-        <Flag className="w-5 h-5 text-cyber-accent" x={-10} y={-10} />
+        <foreignObject x={-10} y={-10} width={20} height={20}>
+          <div className="flex items-center justify-center w-full h-full">
+            <Flag className="w-5 h-5 text-cyber-accent" />
+          </div>
+        </foreignObject>
         <text
           y={-35}
           textAnchor="middle"
@@ -184,7 +188,11 @@ export default function BoardGamePath({
             className="fill-yellow-500/20 stroke-yellow-400 stroke-2"
             filter="url(#glow-gold)"
           />
-          <Trophy className="w-7 h-7 text-yellow-400" x={-14} y={-14} />
+          <foreignObject x={-14} y={-14} width={28} height={28}>
+            <div className="flex items-center justify-center w-full h-full">
+              <Trophy className="w-7 h-7 text-yellow-400" />
+            </div>
+          </foreignObject>
           <text
             y={50}
             textAnchor="middle"

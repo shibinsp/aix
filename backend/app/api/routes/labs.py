@@ -452,41 +452,12 @@ async def list_my_sessions(
         # Add VNC fields for desktop sessions
         if s.preset == 'desktop' and s.access_url:
             session_dict['vnc_url'] = s.access_url
-            session_dict['vnc_password'] = 'toor'
+            # VNC password should be stored in session or retrieved from active session
+            # For now, we indicate it's not available in the list view for security
+            session_dict['vnc_password'] = '[see active session]'
             # Extract port from URL (e.g., http://ip:port -> port)
-            port_match = re.search(r':(\d+)$', s.access_url)
-            if port_match:
-                session_dict['novnc_port'] = int(port_match.group(1))
-        
-        response_sessions.append(LabSessionResponse(**session_dict))
-    
-    return response_sessions
-
-    response_sessions = []
-    for s in sessions:
-        session_dict = {
-            'id': s.id,
-            'user_id': s.user_id,
-            'lab_id': s.lab_id,
-            'status': s.status.value if hasattr(s.status, 'value') else s.status,
-            'started_at': s.started_at,
-            'completed_at': s.completed_at,
-            'expires_at': s.expires_at,
-            'access_url': s.access_url,
-            'flags_captured': s.flags_captured or [],
-            'objectives_completed': s.objectives_completed or [],
-            'score': s.score or 0,
-            'attempts': s.attempts or 0,
-            'created_at': s.created_at,
-            'preset': s.preset,
-        }
-        
-        # Add VNC fields for desktop sessions
-        if s.preset == 'desktop' and s.access_url:
-            session_dict['vnc_url'] = s.access_url
-            session_dict['vnc_password'] = 'toor'
-            # Extract port from URL (e.g., http://ip:port -> port)
-            port_match = re.search(r':(\d+)$', s.access_url)
+            access_url_str = str(s.access_url) if s.access_url else ''
+            port_match = re.search(r':(\d+)$', access_url_str)
             if port_match:
                 session_dict['novnc_port'] = int(port_match.group(1))
         
@@ -587,6 +558,9 @@ async def start_alphha_lab(
     await db.commit()
     await db.refresh(session)
 
+    # Get VNC password from lab result (dynamically generated)
+    vnc_password = lab_result.get("vnc_password", "")
+    
     response = {
         "session_id": str(session.id),
         "status": session.status.value,
@@ -604,7 +578,7 @@ async def start_alphha_lab(
     if preset.startswith("desktop") and vnc_url:
         response["vnc_url"] = vnc_url
         response["novnc_port"] = novnc_port
-        response["vnc_password"] = "toor"
+        response["vnc_password"] = vnc_password
 
     return response
 
@@ -754,6 +728,14 @@ async def stop_vm_lab(
     user_id: str = Depends(get_current_user_id),
 ):
     """Stop a VM-based lab session."""
+    # Verify the VM belongs to the user
+    vm_status = await vm_manager.get_vm_status(session_id)
+    if vm_status.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail="VM session not found")
+    
+    if vm_status.get("user_id") and vm_status.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="You can only stop your own VM sessions")
+
     success = await vm_manager.stop_vm(session_id)
 
     if not success:
