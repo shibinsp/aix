@@ -543,6 +543,101 @@ export default function LearningPath() {
     localStorage.setItem('courseProgressViewMode', progressViewMode);
   }, [progressViewMode]);
 
+  // Restore ongoing course generation from localStorage
+  useEffect(() => {
+    const storedGeneration = localStorage.getItem('course_generation');
+    if (storedGeneration) {
+      try {
+        const generation = JSON.parse(storedGeneration);
+        // Only restore if still in progress
+        if (generation.isGenerating && generation.jobId) {
+          // First restore the basic state
+          setCourseGeneration({
+            isGenerating: true,
+            topic: generation.topic,
+            error: null,
+            success: null,
+            jobId: generation.jobId,
+            progress: generation.progress, // Show cached progress initially
+          });
+          // Restore topic ref for notification closure
+          topicRef.current = generation.topic;
+
+          // Immediately fetch the LATEST status from backend
+          // This ensures we show current progress (e.g., 60%) not stale cache (e.g., 30%)
+          coursesApi.getGenerationStatus(generation.jobId)
+            .then((status) => {
+              setCourseGeneration((prev) => ({
+                ...prev,
+                progress: {
+                  stage: status.current_stage,
+                  percent: status.progress_percent,
+                  currentLesson: status.current_lesson_title,
+                  message: getStageMessage(status.current_stage),
+                },
+              }));
+
+              // Update localStorage with fresh data
+              localStorage.setItem('course_generation', JSON.stringify({
+                isGenerating: true,
+                topic: generation.topic,
+                jobId: generation.jobId,
+                progress: {
+                  stage: status.current_stage,
+                  percent: status.progress_percent,
+                  currentLesson: status.current_lesson_title,
+                  message: getStageMessage(status.current_stage),
+                },
+              }));
+
+              // Check if already completed/failed while user was away
+              if (status.current_stage === 'COMPLETED') {
+                setCourseGeneration((prev) => ({
+                  ...prev,
+                  isGenerating: false,
+                  success: {
+                    courseId: status.course_id,
+                    courseSlug: status.course_id,
+                  },
+                }));
+                localStorage.removeItem('course_generation');
+
+                // Show notification
+                if ('Notification' in window && Notification.permission === 'granted') {
+                  new Notification('Course Generated Successfully!', {
+                    body: `Your course "${generation.topic || 'course'}" is ready to view.`,
+                    icon: '/favicon.ico',
+                  });
+                }
+              } else if (status.current_stage === 'FAILED') {
+                setCourseGeneration((prev) => ({
+                  ...prev,
+                  isGenerating: false,
+                  error: status.error_message || 'Generation failed',
+                }));
+                localStorage.removeItem('course_generation');
+
+                // Show notification
+                if ('Notification' in window && Notification.permission === 'granted') {
+                  new Notification('Course Generation Failed', {
+                    body: status.error_message || 'Failed to generate course',
+                    icon: '/favicon.ico',
+                  });
+                }
+              }
+            })
+            .catch((err) => {
+              console.error('Failed to fetch latest status on restore:', err);
+              // Keep the cached progress, polling will retry
+            });
+        }
+      } catch (err) {
+        console.error('Failed to restore course generation:', err);
+        localStorage.removeItem('course_generation');
+      }
+    }
+  }, []); // Run only on mount
+
   // Poll for generation status
   // Using a ref to track the topic to avoid stale closure issues
   const topicRef = useRef(courseGeneration.topic);
@@ -567,6 +662,20 @@ export default function LearningPath() {
           },
         }));
 
+        // Update localStorage
+        const updatedGeneration = {
+          isGenerating: true,
+          topic: topicRef.current,
+          jobId: courseGeneration.jobId,
+          progress: {
+            stage: status.current_stage,
+            percent: status.progress_percent,
+            currentLesson: status.current_lesson_title,
+            message: getStageMessage(status.current_stage),
+          },
+        };
+        localStorage.setItem('course_generation', JSON.stringify(updatedGeneration));
+
         if (status.current_stage === 'COMPLETED') {
           clearInterval(pollInterval);
           setCourseGeneration((prev) => ({
@@ -577,6 +686,9 @@ export default function LearningPath() {
               courseSlug: status.course_id,
             },
           }));
+
+          // Clean up localStorage
+          localStorage.removeItem('course_generation');
 
           // Show browser notification - use ref to get current topic value
           if ('Notification' in window && Notification.permission === 'granted') {
@@ -592,6 +704,9 @@ export default function LearningPath() {
             isGenerating: false,
             error: status.error_message || 'Generation failed',
           }));
+
+          // Clean up localStorage
+          localStorage.removeItem('course_generation');
 
           // Show browser notification for failure
           if ('Notification' in window && Notification.permission === 'granted') {
@@ -671,6 +786,19 @@ export default function LearningPath() {
 
         setCourseGeneration((prev) => ({
           ...prev,
+          jobId: result.id,
+          progress: {
+            stage: result.current_stage,
+            percent: result.progress_percent,
+            currentLesson: null,
+            message: getStageMessage(result.current_stage),
+          },
+        }));
+
+        // Persist to localStorage
+        localStorage.setItem('course_generation', JSON.stringify({
+          isGenerating: true,
+          topic: courseTopic,
           jobId: result.id,
           progress: {
             stage: result.current_stage,
@@ -861,7 +989,10 @@ export default function LearningPath() {
             View Course
           </button>
           <button
-            onClick={() => setCourseGeneration(g => ({ ...g, success: null }))}
+            onClick={() => {
+              setCourseGeneration(g => ({ ...g, success: null }));
+              localStorage.removeItem('course_generation');
+            }}
             className="p-1 hover:bg-white/20 rounded"
           >
             <X className="w-5 h-5" />
@@ -878,7 +1009,10 @@ export default function LearningPath() {
             <p className="text-sm opacity-90">{courseGeneration.error}</p>
           </div>
           <button
-            onClick={() => setCourseGeneration(g => ({ ...g, error: null }))}
+            onClick={() => {
+              setCourseGeneration(g => ({ ...g, error: null }));
+              localStorage.removeItem('course_generation');
+            }}
             className="p-1 hover:bg-white/20 rounded"
           >
             <X className="w-5 h-5" />
