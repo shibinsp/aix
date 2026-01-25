@@ -941,15 +941,27 @@ export default function LearningPath() {
         // Full modal with minimize button
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="bg-cyber-dark rounded-2xl border border-cyber-accent/30 p-8 max-w-lg text-center relative">
-            {/* Minimize button */}
-            <button
-              onClick={() => setProgressViewMode('minimized')}
-              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-              title="Minimize"
-              aria-label="Minimize to inline view"
-            >
-              <Minimize2 className="w-5 h-5" />
-            </button>
+            {/* Top action buttons */}
+            <div className="absolute top-4 right-4 flex items-center gap-2">
+              {/* Cancel button */}
+              <button
+                onClick={handleCancelGeneration}
+                className="p-2 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition-colors"
+                title="Cancel generation"
+                aria-label="Cancel course generation"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+              {/* Minimize button */}
+              <button
+                onClick={() => setProgressViewMode('minimized')}
+                className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                title="Minimize"
+                aria-label="Minimize to inline view"
+              >
+                <Minimize2 className="w-5 h-5" />
+              </button>
+            </div>
 
               <div className="relative w-20 h-20 mx-auto mb-6">
                 <svg className="w-20 h-20 -rotate-90">
