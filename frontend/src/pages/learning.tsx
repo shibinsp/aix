@@ -15,7 +15,6 @@ import {
   ChevronRight,
   ChevronDown,
   Play,
-  Clock,
   Award,
   Zap,
   Shield,
@@ -35,7 +34,8 @@ import {
   Search,
   Filter,
   Minimize2,
-  Maximize2
+  Maximize2,
+  XCircle
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { coursesApi } from '@/services/api';
@@ -626,9 +626,22 @@ export default function LearningPath() {
                 }
               }
             })
-            .catch((err) => {
+            .catch((err: any) => {
               console.error('Failed to fetch latest status on restore:', err);
-              // Keep the cached progress, polling will retry
+              // If job not found (404), clear the stale state
+              if (err?.response?.status === 404 || err?.message?.includes('404')) {
+                console.warn('Generation job not found on restore, clearing stale state');
+                setCourseGeneration({
+                  isGenerating: false,
+                  topic: '',
+                  error: 'Previous generation job expired. Please start a new generation.',
+                  success: null,
+                  jobId: null,
+                  progress: null,
+                });
+                localStorage.removeItem('course_generation');
+              }
+              // Otherwise keep the cached progress, polling will retry
             });
         }
       } catch (err) {
@@ -716,8 +729,22 @@ export default function LearningPath() {
             });
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to poll status:', err);
+        // If the job no longer exists (404), clear the stuck state
+        if (err?.response?.status === 404 || err?.message?.includes('404')) {
+          console.warn('Generation job not found, clearing stale state');
+          clearInterval(pollInterval);
+          setCourseGeneration({
+            isGenerating: false,
+            topic: '',
+            error: 'Generation job expired or not found. Please try again.',
+            success: null,
+            jobId: null,
+            progress: null,
+          });
+          localStorage.removeItem('course_generation');
+        }
       }
     }, 2000);
 
@@ -832,6 +859,39 @@ export default function LearningPath() {
         jobId: null,
         progress: null,
       });
+    }
+  };
+
+  const handleCancelGeneration = async () => {
+    if (!courseGeneration.jobId) return;
+
+    try {
+      await coursesApi.cancelGeneration(courseGeneration.jobId);
+
+      // Clear the generation state
+      setCourseGeneration({
+        isGenerating: false,
+        topic: '',
+        error: null,
+        success: null,
+        jobId: null,
+        progress: null,
+      });
+
+      // Clear localStorage
+      localStorage.removeItem('course_generation');
+    } catch (err: any) {
+      console.error('Failed to cancel generation:', err);
+      // Still clear the state even if the API fails
+      setCourseGeneration({
+        isGenerating: false,
+        topic: '',
+        error: 'Generation cancelled',
+        success: null,
+        jobId: null,
+        progress: null,
+      });
+      localStorage.removeItem('course_generation');
     }
   };
 
@@ -970,6 +1030,15 @@ export default function LearningPath() {
               <p className="text-xs text-gray-500 mt-2">
                 Click the minimize button to continue browsing while generating
               </p>
+
+              {/* Cancel Button */}
+              <button
+                onClick={handleCancelGeneration}
+                className="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors flex items-center gap-2 mx-auto"
+              >
+                <XCircle className="w-4 h-4" />
+                Cancel Generation
+              </button>
             </div>
           </div>
       )}
@@ -1211,6 +1280,14 @@ export default function LearningPath() {
                   aria-label="Expand to full view"
                 >
                   <Maximize2 className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleCancelGeneration}
+                  className="p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
+                  title="Cancel generation"
+                  aria-label="Cancel course generation"
+                >
+                  <XCircle className="w-5 h-5" />
                 </button>
               </div>
             </div>
